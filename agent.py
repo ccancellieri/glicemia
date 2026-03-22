@@ -8,9 +8,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 import asyncio
 import logging
+import signal
 import sys
 
 from app.config import settings
+from app.database import init_db, get_session
+from app.models import PatientProfile, Condition
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,11 +22,102 @@ logging.basicConfig(
 log = logging.getLogger("glicemia")
 
 
+def _seed_patient_profile():
+    """Create default patient profile if none exists."""
+    session = get_session()
+    try:
+        if session.query(PatientProfile).first():
+            return
+
+        session.add(PatientProfile(
+            name=settings.PATIENT_NAME,
+            diabetes_type="T1D",
+            pump_model="MiniMed 780G (MMT-1886)",
+            sensor_model="Guardian 4",
+            diet="vegetarian",
+            language=settings.LANGUAGE,
+        ))
+
+        # Seed known conditions
+        conditions = [
+            Condition(
+                snomed_code="46635009",
+                icd_code="E10",
+                display_name="Diabete tipo 1",
+                clinical_status="active",
+                severity="moderate",
+            ),
+        ]
+        for c in conditions:
+            session.add(c)
+
+        session.commit()
+        log.info("Patient profile seeded for %s", settings.PATIENT_NAME)
+    finally:
+        session.close()
+
+
+async def _start_carelink_poller():
+    """Start the CareLink polling loop."""
+    from app.carelink.client import CareLinkClient
+    from app.carelink.parser import parse_realtime
+
+    client = CareLinkClient()
+    if not client.connect():
+        log.warning("CareLink not available — running without real-time data")
+        return
+
+    async def poll_loop():
+        while True:
+            try:
+                data = client.fetch()
+                if data:
+                    session = get_session()
+                    try:
+                        parse_realtime(data, session)
+                    finally:
+                        session.close()
+            except Exception as e:
+                log.error("CareLink poll error: %s", e)
+            await asyncio.sleep(settings.CARELINK_POLL_INTERVAL)
+
+    asyncio.create_task(poll_loop())
+    log.info("CareLink poller started (interval=%ds)", settings.CARELINK_POLL_INTERVAL)
+
+
 async def main():
     log.info("Starting GliceMia...")
 
-    # TODO: Phase 1 — initialize database, CareLink poller, Telegram bot
-    log.info("GliceMia is not yet implemented. See the plan for details.")
+    # 1. Initialize database
+    init_db()
+    _seed_patient_profile()
+
+    # 2. Start CareLink poller (non-blocking)
+    await _start_carelink_poller()
+
+    # 3. Start Telegram bot
+    from app.chat.telegram import TelegramPlatform
+    telegram = TelegramPlatform()
+
+    # Handle graceful shutdown
+    stop_event = asyncio.Event()
+
+    def handle_signal():
+        log.info("Shutdown signal received")
+        stop_event.set()
+
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, handle_signal)
+
+    await telegram.start()
+    log.info("GliceMia is running! Press Ctrl+C to stop.")
+
+    # Wait for shutdown signal
+    await stop_event.wait()
+
+    await telegram.stop()
+    log.info("GliceMia stopped.")
 
 
 if __name__ == "__main__":

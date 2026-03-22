@@ -57,6 +57,30 @@ def _seed_patient_profile():
         session.close()
 
 
+_telegram_app = None  # Set when Telegram starts, used by alert notifier
+
+
+async def _check_and_send_alerts(session):
+    """Check for proactive alerts and send them via Telegram."""
+    from app.alerts.engine import check_alerts
+    from app.alerts.notifier import format_alert
+
+    alerts = check_alerts(session)
+    if not alerts or not _telegram_app or not settings.TELEGRAM_ALLOWED_USERS:
+        return
+
+    for alert in alerts:
+        text = format_alert(alert, settings.PATIENT_NAME, settings.LANGUAGE)
+        for user_id in settings.TELEGRAM_ALLOWED_USERS:
+            try:
+                await _telegram_app.bot.send_message(
+                    chat_id=user_id, text=text, parse_mode="Markdown"
+                )
+                log.info("Alert sent: %s (severity=%s)", alert.alert_type, alert.severity)
+            except Exception as e:
+                log.error("Failed to send alert to %s: %s", user_id, e)
+
+
 async def _start_carelink_poller():
     """Start the CareLink polling loop."""
     from app.carelink.client import CareLinkClient
@@ -75,6 +99,8 @@ async def _start_carelink_poller():
                     session = get_session()
                     try:
                         parse_realtime(data, session)
+                        # Check proactive alerts after every poll
+                        await _check_and_send_alerts(session)
                     finally:
                         session.close()
             except Exception as e:
@@ -132,6 +158,7 @@ async def main():
     await _start_pattern_scheduler()
 
     # 4. Start Telegram bot
+    global _telegram_app
     from app.chat.telegram import TelegramPlatform
     telegram = TelegramPlatform()
 
@@ -147,6 +174,7 @@ async def main():
         loop.add_signal_handler(sig, handle_signal)
 
     await telegram.start()
+    _telegram_app = telegram._app  # Expose for alert notifier
     log.info("GliceMia is running! Press Ctrl+C to stop.")
 
     # Wait for shutdown signal

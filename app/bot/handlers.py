@@ -188,6 +188,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=activity_menu(lang),
         )
 
+    elif data.startswith("activity_"):
+        activity_type = data.replace("activity_", "")
+        context.user_data["pending_activity"] = activity_type
+        prompts = {
+            "it": f"{_get_name()}, condividi la posizione di partenza per pianificare il percorso {activity_type}! 📍",
+            "en": f"{_get_name()}, share your starting location to plan the {activity_type} route! 📍",
+            "es": f"{_get_name()}, ¡comparte tu ubicación de inicio para planificar la ruta de {activity_type}! 📍",
+            "fr": f"{_get_name()}, partage ta position de départ pour planifier le parcours {activity_type} ! 📍",
+        }
+        await query.edit_message_text(prompts.get(lang, prompts["it"]))
+
     elif data == "report":
         await query.edit_message_text(
             msg("btn_report", lang),
@@ -421,38 +432,111 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = _get_lang(context)
     loc = update.message.location
 
-    # Store in user_data for activity planning flow
     context.user_data["last_location"] = {
         "lat": loc.latitude,
         "lon": loc.longitude,
     }
 
+    # If there's a pending activity, run the full planner
+    pending_activity = context.user_data.get("pending_activity")
+    if pending_activity:
+        context.user_data.pop("pending_activity", None)
+        thinking_msg = await update.message.reply_text(msg("thinking", lang))
+
+        session = get_session()
+        try:
+            from app.activity.tracker import plan_activity
+            plan = await plan_activity(
+                session,
+                activity_type=pending_activity,
+                lat=loc.latitude,
+                lon=loc.longitude,
+                patient_name=_get_name(),
+            )
+            text = _format_activity_plan(plan, lang)
+
+            # Also ask AI for personalized commentary
+            ctx = build_context(session)
+            system_prompt = build_system_prompt(_get_name(), lang, ctx)
+            ai_prompt = (
+                f"Activity plan for {_get_name()}: {pending_activity}, "
+                f"duration {plan['duration_min']}min, "
+                f"calories ~{plan['calories']['calories_total']}kcal, "
+                f"glucose prediction: current {plan['glucose_impact'].get('current_sg', '?')} → "
+                f"end {plan['glucose_impact'].get('predicted_sg_end', '?')} mg/dL. "
+                f"Weather: {plan.get('weather', 'unknown')}. "
+                "Give a brief, friendly commentary with practical tips. "
+                "Always show final predicted glucose values."
+            )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": ai_prompt},
+            ]
+            ai_comment = await ai_chat(messages)
+
+            await thinking_msg.edit_text(
+                text + "\n\n" + ai_comment,
+                parse_mode="Markdown",
+            )
+        finally:
+            session.close()
+        return
+
+    # General location share — ask AI for suggestions
     session = get_session()
     try:
         ctx = build_context(session)
         system_prompt = build_system_prompt(_get_name(), lang, ctx)
 
-        location_msg = {
-            "it": (
-                f"{_get_name()} ha condiviso la posizione: "
-                f"lat={loc.latitude:.6f}, lon={loc.longitude:.6f}. "
-                "Suggerisci attività in zona considerando glicemia attuale, "
-                "storico e condizioni. Mostra previsione glicemia finale."
-            ),
-            "en": (
-                f"{_get_name()} shared location: "
-                f"lat={loc.latitude:.6f}, lon={loc.longitude:.6f}. "
-                "Suggest activities in the area considering current glucose, "
-                "history and conditions. Show final glucose prediction."
-            ),
-        }
+        location_msg = (
+            f"{_get_name()} ha condiviso la posizione: "
+            f"lat={loc.latitude:.6f}, lon={loc.longitude:.6f}. "
+            "Suggerisci attività in zona considerando glicemia attuale, "
+            "storico e condizioni. Mostra previsione glicemia finale."
+        )
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": location_msg.get(lang, location_msg["it"])},
+            {"role": "user", "content": location_msg},
         ]
 
         response = await ai_chat(messages)
         await update.message.reply_text(response, parse_mode="Markdown")
     finally:
         session.close()
+
+
+def _format_activity_plan(plan: dict, lang: str) -> str:
+    """Format an activity plan into a Telegram message."""
+    at = plan["activity_type"]
+    icons = {"cycling": "🚴", "walking": "🥾", "running": "🏃", "gym": "🏋️"}
+    icon = icons.get(at, "🏃")
+
+    lines = [f"{icon} *{at.title()}*\n"]
+
+    if plan["distance_km"]:
+        lines.append(f"📏 {plan['distance_km']} km")
+    if plan["elevation_gain_m"]:
+        lines.append(f"⛰️ +{plan['elevation_gain_m']}m / -{plan['elevation_loss_m']}m")
+    lines.append(f"⏱️ ~{plan['duration_min']} min")
+    lines.append(f"🔥 ~{plan['calories']['calories_total']} kcal")
+
+    weather = plan.get("weather")
+    if weather and weather.get("temp_c") is not None:
+        lines.append(f"🌡️ {weather['temp_c']:.0f}°C, {weather.get('conditions', '')}")
+
+    gi = plan.get("glucose_impact", {})
+    if "error" not in gi:
+        lines.append(f"\n📊 Glicemia: *{gi.get('current_sg', '?')}* → stima *{gi.get('predicted_sg_end', '?')}* mg/dL")
+        lines.append(f"Calo stimato: ~{gi.get('estimated_drop', '?')} mg/dL")
+        risk = gi.get("risk_level", "low")
+        risk_icons = {"low": "🟢", "moderate": "🟡", "high": "🔴"}
+        lines.append(f"Rischio: {risk_icons.get(risk, '?')} {risk}")
+
+    suggestions = plan.get("suggestions", [])
+    if suggestions:
+        lines.append("\n💡 *Suggerimenti:*")
+        for i, s in enumerate(suggestions, 1):
+            lines.append(f"{i}. {s}")
+
+    return "\n".join(lines)

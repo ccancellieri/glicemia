@@ -1,0 +1,39 @@
+# Patient data (NEVER commit)
+private/
+memory/
+
+# Database (contains patient data, encrypted)
+*.db
+*.sqlite
+
+# Environment & secrets
+.env
+logindata.json
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Generated files (contain patient data)
+_chart_*.png
+report_*.pdf
+Report_*.xlsx
+output_report/

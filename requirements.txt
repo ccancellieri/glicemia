@@ -1,0 +1,35 @@
+# GliceMia — Dependencies
+# Install: pip install -r requirements.txt
+
+# AI routing (pluggable: Gemini, Ollama, Claude, OpenAI, etc.)
+litellm>=1.40.0
+
+# Telegram bot
+python-telegram-bot>=21.0
+
+# CareLink Cloud API (Medtronic 780G)
+carelink-python-client>=0.1.0
+
+# Database (encrypted SQLite)
+sqlalchemy>=2.0
+sqlcipher3>=0.5.0
+
+# Scheduler (CareLink polling, pattern computation)
+apscheduler>=3.10
+
+# Charts
+matplotlib>=3.8
+
+# Environment
+python-dotenv>=1.0
+
+# Health connectors
+fhirclient>=4.0
+apple-health-parser>=0.1.0
+
+# Maps & weather
+# openrouteservice>=2.3  # uncomment when needed
+# requests>=2.31         # uncomment when needed (for OpenWeatherMap)
+
+# MCP server (Claude Desktop integration)
+# mcp>=0.1.0             # uncomment when needed

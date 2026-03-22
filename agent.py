@@ -85,6 +85,39 @@ async def _start_carelink_poller():
     log.info("CareLink poller started (interval=%ds)", settings.CARELINK_POLL_INTERVAL)
 
 
+async def _start_pattern_scheduler():
+    """Compute patterns on startup and schedule daily recomputation."""
+    from app.analytics.patterns import compute_all_patterns
+
+    # Compute once on startup
+    session = get_session()
+    try:
+        compute_all_patterns(session)
+    except Exception as e:
+        log.error("Initial pattern computation failed: %s", e)
+    finally:
+        session.close()
+
+    # Schedule daily recomputation at 04:00
+    async def daily_patterns():
+        while True:
+            await asyncio.sleep(3600)  # Check every hour
+            from datetime import datetime
+            now = datetime.utcnow()
+            if now.hour == 4 and now.minute < 5:
+                log.info("Running daily pattern computation...")
+                session = get_session()
+                try:
+                    compute_all_patterns(session)
+                except Exception as e:
+                    log.error("Daily pattern computation failed: %s", e)
+                finally:
+                    session.close()
+
+    asyncio.create_task(daily_patterns())
+    log.info("Pattern scheduler started (daily at 04:00 UTC)")
+
+
 async def main():
     log.info("Starting GliceMia...")
 
@@ -95,7 +128,10 @@ async def main():
     # 2. Start CareLink poller (non-blocking)
     await _start_carelink_poller()
 
-    # 3. Start Telegram bot
+    # 3. Compute patterns on startup + schedule daily recomputation
+    await _start_pattern_scheduler()
+
+    # 4. Start Telegram bot
     from app.chat.telegram import TelegramPlatform
     telegram = TelegramPlatform()
 

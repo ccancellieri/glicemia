@@ -315,7 +315,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photo messages — food analysis with vision AI."""
+    """Handle photo messages — food analysis with vision AI + own bolus estimation."""
     if not _is_authorized(update.effective_user.id):
         return
 
@@ -323,60 +323,56 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     thinking_msg = await update.message.reply_text(msg("thinking", lang))
 
     try:
-        # Download photo
-        photo = update.message.photo[-1]  # Highest resolution
+        photo = update.message.photo[-1]
         file = await photo.get_file()
         photo_bytes = await file.download_as_bytearray()
         photo_b64 = base64.b64encode(bytes(photo_bytes)).decode("utf-8")
-
         caption = update.message.caption or ""
 
         session = get_session()
         try:
-            ctx = build_context(session)
-            system_prompt = build_system_prompt(_get_name(), lang, ctx)
-
-            food_instruction = {
-                "it": (
-                    f"Analizza questa foto di cibo per {_get_name()}. "
-                    "Stima i carboidrati, calcola il bolo suggerito usando I:C, ISF, IOB e SG attuale. "
-                    "Mostra SEMPRE il valore finale di glicemia previsto."
-                ),
-                "en": (
-                    f"Analyze this food photo for {_get_name()}. "
-                    "Estimate carbs, calculate suggested bolus using I:C, ISF, IOB, and current SG. "
-                    "ALWAYS show the final predicted glucose value."
-                ),
-                "es": (
-                    f"Analiza esta foto de comida para {_get_name()}. "
-                    "Estima los carbohidratos, calcula el bolo sugerido usando I:C, ISF, IOB y SG actual. "
-                    "Muestra SIEMPRE el valor final de glucosa previsto."
-                ),
-                "fr": (
-                    f"Analyse cette photo de repas pour {_get_name()}. "
-                    "Estime les glucides, calcule le bolus suggéré avec I:C, ISF, IOB et glycémie actuelle. "
-                    "Montre TOUJOURS la valeur finale de glycémie prévue."
-                ),
-            }
-
-            user_msg = food_instruction.get(lang, food_instruction["it"])
-            if caption:
-                user_msg += f"\n\nNote: {caption}"
-
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_msg},
-            ]
-
-            from app.ai.llm import chat_with_vision
-            response = await chat_with_vision(messages, image_base64=photo_b64)
-
+            from app.bot.food import analyze_food_photo
+            response, estimation = await analyze_food_photo(
+                photo_b64, caption, session, _get_name(), lang
+            )
             await thinking_msg.edit_text(response, parse_mode="Markdown")
         finally:
             session.close()
 
     except Exception as e:
         log.error("Error handling photo: %s", e)
+        await thinking_msg.edit_text(f"[Error: {e}]")
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle voice messages — transcribe + AI response with full context."""
+    if not _is_authorized(update.effective_user.id):
+        return
+
+    lang = _get_lang(context)
+    thinking_msg = await update.message.reply_text(msg("thinking", lang))
+
+    try:
+        voice = update.message.voice
+        file = await voice.get_file()
+        voice_bytes = await file.download_as_bytearray()
+
+        session = get_session()
+        try:
+            from app.bot.voice import process_voice_message
+            response = await process_voice_message(
+                bytes(voice_bytes),
+                session,
+                user_id=str(update.effective_user.id),
+                patient_name=_get_name(),
+                lang=lang,
+            )
+            await thinking_msg.edit_text(response, parse_mode="Markdown")
+        finally:
+            session.close()
+
+    except Exception as e:
+        log.error("Error handling voice: %s", e)
         await thinking_msg.edit_text(f"[Error: {e}]")
 
 

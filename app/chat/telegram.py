@@ -17,7 +17,7 @@ from app.config import settings
 from app.bot.handlers import (
     cmd_start, cmd_menu, cmd_status, cmd_help,
     handle_callback, handle_text, handle_photo,
-    handle_document, handle_location,
+    handle_voice, handle_document, handle_location,
 )
 
 log = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ class TelegramPlatform(ChatPlatform):
 
         # Message type handlers
         app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        app.add_handler(MessageHandler(filters.VOICE, handle_voice))
         app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
         app.add_handler(MessageHandler(filters.LOCATION, handle_location))
         app.add_handler(MessageHandler(

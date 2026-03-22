@@ -157,7 +157,16 @@ async def main():
     # 3. Compute patterns on startup + schedule daily recomputation
     await _start_pattern_scheduler()
 
-    # 4. Start Telegram bot
+    # 4. Start MCP server (if mcp package installed)
+    try:
+        from app.mcp.server import create_mcp_server
+        mcp_server = create_mcp_server()
+        if mcp_server:
+            log.info("MCP server available for Claude Desktop")
+    except Exception as e:
+        log.debug("MCP server not started: %s", e)
+
+    # 5. Start Telegram bot
     global _telegram_app
     from app.chat.telegram import TelegramPlatform
     telegram = TelegramPlatform()

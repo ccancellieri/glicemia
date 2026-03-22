@@ -264,6 +264,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         await query.edit_message_text(food_prompt.get(lang, food_prompt["it"]))
 
+    elif data.startswith("report_"):
+        period = data.replace("report_", "")
+        await query.edit_message_text(msg("thinking", lang))
+        session = get_session()
+        try:
+            from app.reports.generator import generate_report
+            text, chart_bytes = generate_report(session, period, _get_name(), lang)
+            if chart_bytes:
+                await query.message.reply_photo(
+                    photo=chart_bytes, caption=text[:1024], parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(text, parse_mode="Markdown")
+        finally:
+            session.close()
+
+    elif data == "import_health":
+        health_prompt = {
+            "it": f"{_get_name()}, inviami il file ZIP esportato da Apple Health (Impostazioni → Salute → Esporta) 📱",
+            "en": f"{_get_name()}, send me the ZIP file exported from Apple Health (Settings → Health → Export) 📱",
+            "es": f"{_get_name()}, envíame el archivo ZIP exportado de Apple Health (Ajustes → Salud → Exportar) 📱",
+            "fr": f"{_get_name()}, envoie-moi le fichier ZIP exporté d'Apple Santé (Réglages → Santé → Exporter) 📱",
+        }
+        await query.edit_message_text(health_prompt.get(lang, health_prompt["it"]))
+
     else:
         # For unhandled callbacks, acknowledge silently
         log.debug("Unhandled callback: %s", data)
@@ -388,32 +413,64 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle document uploads — CSV import for CareLink data."""
+    """Handle document uploads — CSV, ZIP (Apple Health), PDF (lab results)."""
     if not _is_authorized(update.effective_user.id):
         return
 
     lang = _get_lang(context)
     doc = update.message.document
-
-    if not doc.file_name or not doc.file_name.lower().endswith(".csv"):
-        await update.message.reply_text(
-            msg("csv_import_error", lang, error="Only CSV files are supported")
-        )
-        return
+    filename = (doc.file_name or "").lower()
 
     thinking_msg = await update.message.reply_text(msg("thinking", lang))
 
     try:
         file = await doc.get_file()
-        file_bytes = await file.download_as_bytearray()
+        file_bytes = bytes(await file.download_as_bytearray())
 
         session = get_session()
         try:
-            stats = import_carelink_csv_bytes(
-                bytes(file_bytes), doc.file_name, session
-            )
-            result_text = format_csv_import_result(stats, lang)
-            await thinking_msg.edit_text(result_text)
+            if filename.endswith(".zip"):
+                # Apple Health import
+                from app.health.apple import import_apple_health_zip
+                stats = import_apple_health_zip(file_bytes, session)
+                if "error" in stats:
+                    await thinking_msg.edit_text(f"❌ {stats['error']}")
+                else:
+                    text = (
+                        f"✅ Apple Health importato!\n"
+                        f"• {stats.get('records', 0)} record salute\n"
+                        f"• {stats.get('workouts', 0)} allenamenti\n"
+                        f"• {stats.get('skipped', 0)} duplicati saltati"
+                    )
+                    await thinking_msg.edit_text(text)
+
+            elif filename.endswith(".csv"):
+                # CareLink CSV import
+                stats = import_carelink_csv_bytes(file_bytes, doc.file_name, session)
+                result_text = format_csv_import_result(stats, lang)
+                await thinking_msg.edit_text(result_text)
+
+            elif filename.endswith(".pdf"):
+                # Lab results PDF — extract text and analyze
+                from app.health.lab_analyzer import analyze_lab_results
+                # For PDF, we send as image to vision AI
+                photo_b64 = base64.b64encode(file_bytes).decode("utf-8")
+                results, summary = await analyze_lab_results(
+                    image_b64=photo_b64, session=session,
+                    patient_name=_get_name(), lang=lang,
+                )
+                if summary:
+                    # Update conditions from new lab data
+                    from app.health.conditions import update_conditions_from_labs
+                    update_conditions_from_labs(session)
+                    await thinking_msg.edit_text(summary, parse_mode="Markdown")
+                else:
+                    await thinking_msg.edit_text("❌ Could not parse lab results")
+
+            else:
+                await thinking_msg.edit_text(
+                    msg("csv_import_error", lang, error="Supported formats: CSV, ZIP, PDF")
+                )
         finally:
             session.close()
 

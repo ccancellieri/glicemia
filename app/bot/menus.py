@@ -1,12 +1,21 @@
 """Inline keyboard menus for the Telegram bot."""
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
+from app.config import settings
 from app.i18n.messages import msg
 
 
 def main_menu(lang: str = "it") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    rows = []
+    # WebApp dashboard button (if URL configured)
+    if settings.WEBAPP_URL:
+        webapp_labels = {"it": "📱 Dashboard", "en": "📱 Dashboard", "es": "📱 Panel", "fr": "📱 Tableau de bord"}
+        rows.append([InlineKeyboardButton(
+            webapp_labels.get(lang, "📱 Dashboard"),
+            web_app=WebAppInfo(url=settings.WEBAPP_URL),
+        )])
+    rows.extend([
         [InlineKeyboardButton(msg("btn_status", lang), callback_data="status")],
         [InlineKeyboardButton(msg("btn_food_photo", lang), callback_data="food_photo")],
         [InlineKeyboardButton(msg("btn_plan_activity", lang), callback_data="plan_activity")],
@@ -20,6 +29,7 @@ def main_menu(lang: str = "it") -> InlineKeyboardMarkup:
             InlineKeyboardButton(msg("btn_help", lang), callback_data="help"),
         ],
     ])
+    return InlineKeyboardMarkup(rows)
 
 
 def activity_menu(lang: str = "it") -> InlineKeyboardMarkup:
@@ -48,10 +58,12 @@ def report_menu(lang: str = "it") -> InlineKeyboardMarkup:
     ])
 
 
-def settings_menu(lang: str = "it") -> InlineKeyboardMarkup:
+def settings_menu(lang: str = "it", voice_reply: bool = False) -> InlineKeyboardMarkup:
+    voice_key = "btn_voice_reply_on" if voice_reply else "btn_voice_reply_off"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(msg("btn_language", lang), callback_data="set_language")],
         [InlineKeyboardButton(msg("btn_ai_model", lang), callback_data="set_ai_model")],
+        [InlineKeyboardButton(msg(voice_key, lang), callback_data="toggle_voice_reply")],
         [InlineKeyboardButton(msg("btn_back", lang), callback_data="main_menu")],
     ])
 

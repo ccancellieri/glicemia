@@ -166,7 +166,15 @@ async def main():
     except Exception as e:
         log.debug("MCP server not started: %s", e)
 
-    # 5. Start Telegram bot
+    # 5. Start WebApp server (Mini App + API)
+    webapp_runner = None
+    try:
+        from app.webapp.server import create_webapp_server
+        webapp_runner = await create_webapp_server()
+    except Exception as e:
+        log.debug("WebApp server not started: %s", e)
+
+    # 6. Start Telegram bot
     global _telegram_app
     from app.chat.telegram import TelegramPlatform
     telegram = TelegramPlatform()
@@ -190,6 +198,8 @@ async def main():
     await stop_event.wait()
 
     await telegram.stop()
+    if webapp_runner:
+        await webapp_runner.cleanup()
     log.info("GliceMia stopped.")
 
 

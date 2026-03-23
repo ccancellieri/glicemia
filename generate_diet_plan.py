@@ -1,7 +1,6 @@
 """
-PDF: Piano Alimentare e Gestione Completa per Nuria Perez Diez
-T1D + Vegetariana + Osteoporosi + Menopausa precoce + Sport quotidiano
-MiniMed 780G
+PDF: Piano Alimentare e Gestione Completa
+T1D + MiniMed 780G
 """
 
 import os
@@ -243,19 +242,19 @@ def generate_diet_pdf():
     # PAGE 1: PROFILO + COSA SUCCEDE
     # ═══════════════════════════════════════════
     story.append(Paragraph("Piano Alimentare e Gestione Completa", styles["Title2"]))
-    story.append(Paragraph("Nuria Perez Diez — MiniMed 780G — Marzo 2026", styles["Subtitle"]))
+    story.append(Paragraph("T1D Patient — MiniMed 780G", styles["Subtitle"]))
 
     # Profile
     story.append(Paragraph("Profilo", styles["SectionHead"]))
     profile = [
         ["Dato", "Valore"],
-        ["Eta' / Peso", "46 anni, ~54 kg"],
-        ["Diagnosi", "T1D da 20 anni"],
-        ["Altre condizioni", "Osteoporosi, menopausa precoce (da 4 anni)"],
-        ["Alimentazione", "Vegetariana"],
-        ["Microinfusore", "MiniMed 780G (MMT-1886) + Guardian 4 Sensor"],
-        ["Attivita' fisica", "Molto sportiva: bici 30 min (Ma/Gi) + 2h sport ogni giorno"],
-        ["Sveglia", "Ma/Gi 6:30 — Altri giorni ~9:00"],
+        ["Eta' / Peso", "—"],
+        ["Diagnosi", "T1D"],
+        ["Altre condizioni", "—"],
+        ["Alimentazione", "—"],
+        ["Microinfusore", "MiniMed 780G + Guardian 4 Sensor"],
+        ["Attivita' fisica", "—"],
+        ["Sveglia", "—"],
     ]
     story.append(make_table(profile, col_widths=[35*mm, W-35*mm]))
 
@@ -286,7 +285,7 @@ def generate_diet_pdf():
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph(
         "<b>Insulina totale: 12.8-15.6 U/giorno = 0.24-0.29 U/kg</b> — molto bassa per una T1D. "
-        "Conferma una sensibilita' insulinica altissima dovuta a peso (54 kg), sport quotidiano "
+        "Conferma una sensibilita' insulinica altissima dovuta a sport quotidiano "
         "e 20 anni di T1D con buon controllo. Piccole dosi di IOB hanno effetti importanti.", styles["Body"]))
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph(
@@ -328,10 +327,10 @@ def generate_diet_pdf():
     story.append(Paragraph("2. Piano Alimentare Settimanale", styles["SectionHead"]))
 
     story.append(Paragraph(
-        "<b>Principi guida:</b> Vegetariana, T1D, osteoporosi, menopausa precoce. "
+        "<b>Principi guida:</b> T1D. "
         "I carboidrati NON vanno eliminati (indicazione medica anti-chetosi). "
-        "Privilegiare CHO a basso IG, proteine vegetali ricche di calcio, "
-        "alimenti con vitamina D e fitoestrogenici (soia, lino, sesamo).", styles["Body"]))
+        "Privilegiare CHO a basso IG, proteine ricche di calcio, "
+        "alimenti con vitamina D.", styles["Body"]))
     story.append(Spacer(1, 2*mm))
 
     # Nutrient targets
@@ -340,9 +339,9 @@ def generate_diet_pdf():
         ["Nutriente", "Obiettivo/giorno", "Perche'"],
         ["Carboidrati", "100-130g totali", "Anti-chetosi + energia sport"],
         ["Proteine", "55-65g (1.0-1.2 g/kg)", "Ossa + muscoli + recupero sport"],
-        ["Calcio", "1200 mg", "Osteoporosi + menopausa"],
+        ["Calcio", "1200 mg", "Salute ossea"],
         ["Vitamina D", "800-1000 UI", "Assorbimento calcio + ossa"],
-        ["Ferro", "18 mg", "Vegetariana + sport + mestruazioni assenti\nma depositi da mantenere"],
+        ["Ferro", "18 mg", "Sport + depositi da mantenere"],
         ["Magnesio", "320 mg", "Sensibilita' insulinica + ossa + muscoli"],
         ["Omega-3 (ALA)", "1.5-2g", "Infiammazione + cardiovascolare"],
     ]
@@ -425,7 +424,7 @@ def generate_diet_pdf():
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph(
         "<b>Totale giornata:</b> ~90-120g CHO — <b>Calcio:</b> ~1000-1400 mg — "
-        "<b>OK per anti-chetosi e osteoporosi</b>", styles["Tip"]))
+        "<b>OK per anti-chetosi</b>", styles["Tip"]))
     story.append(Spacer(1, 3*mm))
 
     story.append(Paragraph("Piano Pasti: Altri Giorni (sveglia ~9:00, no bici al mattino)", styles["SubHead"]))
@@ -493,7 +492,7 @@ def generate_diet_pdf():
     osteo = [
         ["Alimento", "Frequenza", "Porzione", "Calcio", "Perche' e' importante"],
         ["Tofu (con calcio)", "3-4 volte/sett.", "100-150g", "350-525 mg", "La fonte vegetale piu' ricca\ndi calcio + proteine + isoflavoni"],
-        ["Latte soia fortif.", "Ogni giorno", "250 ml", "300 mg", "Gia' lo bevi! Isoflavoni\nbenefici in menopausa"],
+        ["Latte soia fortif.", "Ogni giorno", "250 ml", "300 mg", "Isoflavoni benefici\nper la salute ossea"],
         ["Semi di sesamo", "Ogni giorno", "15g (1 cucch.)", "140 mg", "Aggiungi su insalate,\npasta, zuppe — facile!"],
         ["Verdure a foglia\n(broccoli, kale,\ncavolo)", "Ogni giorno", "200g cotti", "90-150 mg", "Calcio + vitamina K\n(essenziale per le ossa)\n+ antiossidanti"],
         ["Mandorle / fichi\nsecchi", "Ogni giorno", "30g", "50-75 mg", "Snack ricco di calcio\nmagnesio e fibra"],
@@ -507,8 +506,7 @@ def generate_diet_pdf():
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph(
         "<b>Fitoestrogenici:</b> la soia (latte, tofu, tempeh, edamame) contiene isoflavoni "
-        "che hanno un effetto simile agli estrogeni — benefico per le ossa in menopausa precoce. "
-        "Ne stai gia' assumendo con il latte di soia!", styles["Body"]))
+        "che hanno un effetto benefico per la salute ossea.", styles["Body"]))
 
     story.append(PageBreak())
 
@@ -567,7 +565,7 @@ def generate_diet_pdf():
          "Il problema e' il tipo di CHO\ne il timing, non la dose"],
         ["4", "ICR Colazione\n(6-10)", "11-14 g/U", "INVARIATO", "-", "Colazione leggera senza\n"
          "bolo → funziona bene"],
-        ["5", "ISF", "100 mg/dL/U", "INVARIATO\n(per ora)", "Rivalutare\ndopo 4 sett.", "Con 54 kg e sport quotidiano\n"
+        ["5", "ISF", "100 mg/dL/U", "INVARIATO\n(per ora)", "Rivalutare\ndopo 4 sett.", "Con sport quotidiano\n"
          "la sensibilita' e' gia' alta.\nPrima implementare la\nstrategia alimentare"],
         ["6", "Target\nSmartGuard", "120 mg/dL", "INVARIATO\n(NON abbassare!)", "-", "Con Target 100 il TIR era\nPEGGIORE (51% vs 59%).\n120 e' il valore giusto.\nUsare Temp Target pre-sport"],
     ]
@@ -602,18 +600,14 @@ def generate_diet_pdf():
         "Se possibile, includi negli allenamenti esercizi con salti o pesi.", styles["Body"]))
     story.append(Spacer(1, 2*mm))
 
-    story.append(Paragraph("Menopausa precoce e T1D", styles["SubHead2"]))
+    story.append(Paragraph("Controlli periodici T1D", styles["SubHead2"]))
     story.append(Paragraph(
-        "La menopausa precoce + T1D aumentano il rischio cardiovascolare e osseo. "
-        "La dieta ricca di soia (isoflavoni) che gia' segui e' benefica. "
-        "Punti da verificare con la dottoressa:", styles["Body"]))
+        "Punti da verificare periodicamente con il diabetologo:", styles["Body"]))
     checks = [
         "Livello vitamina D nel sangue (25-OH vitamina D, obiettivo >30 ng/mL)",
-        "Densitometria ossea (DEXA) annuale",
         "Eventuale integrazione di vitamina D (800-1000 UI/giorno)",
-        "Valutare se l'integrazione di calcio e' sufficiente dalla dieta\n"
-        "  (obiettivo 1200 mg/giorno — raggiungibile con tofu + soia + sesamo + verdure)",
-        "Profilo lipidico annuale (rischio cardiovascolare in menopausa)",
+        "Valutare se l'apporto di calcio e' sufficiente dalla dieta",
+        "Profilo lipidico annuale",
         "HbA1c ogni 3 mesi (obiettivo <7.0%)",
     ]
     for c in checks:
@@ -638,8 +632,8 @@ def generate_diet_pdf():
     story.append(Spacer(1, 3*mm))
     story.append(Paragraph("Peso e sensibilita' insulinica", styles["SubHead2"]))
     story.append(Paragraph(
-        "Con 54 kg, 2.5 ore di sport al giorno e solo 12.8-15.6 U/giorno di insulina totale "
-        "(= 0.24-0.29 U/kg, molto basso per T1D), la sensibilita' insulinica e' altissima. "
+        "Con sport quotidiano e un fabbisogno insulinico basso "
+        "la sensibilita' insulinica e' altissima. "
         "Questo spiega perche':", styles["Body"]))
     weight_notes = [
         "Anche piccole dosi di IOB (1-2U) combinate con esercizio causano ipo",

@@ -1,5 +1,5 @@
 """
-PDF: Piano Gestione Sport e Diabete per Nuria Perez Diez
+PDF: Piano Gestione Sport e Diabete
 MiniMed 780G — Strategia esercizio fisico quotidiano
 """
 
@@ -254,7 +254,7 @@ def generate_sport_pdf():
 
     # ── TITLE ──
     story.append(Paragraph("Piano Gestione Sport e Diabete", styles["Title2"]))
-    story.append(Paragraph("MiniMed 780G - Nuria Perez Diez (46 anni, T1D da 20 anni) - Strategia Quotidiana", styles["Subtitle"]))
+    story.append(Paragraph("MiniMed 780G - T1D Patient - Strategia Quotidiana", styles["Subtitle"]))
     story.append(Spacer(1, 3*mm))
 
     # ── ROUTINE ──
@@ -262,30 +262,23 @@ def generate_sport_pdf():
     story.append(Paragraph("Profilo Paziente", styles["SectionHead"]))
     profile = [
         ["Dato", "Valore"],
-        ["Nome", "Nuria Perez Diez"],
-        ["Eta'", "46 anni"],
-        ["Peso", "~54 kg"],
-        ["Diagnosi T1D", "Da 20 anni"],
-        ["Altre patologie", "Osteoporosi, menopausa precoce (da 4 anni)"],
-        ["Microinfusore", "MiniMed 780G (MMT-1886) + Guardian 4"],
-        ["Livello attivita'", "Molto sportiva (~2.5 ore/giorno)"],
+        ["Nome", os.getenv("PATIENT_NAME", "Patient")],
+        ["Eta'", "—"],
+        ["Peso", "—"],
+        ["Diagnosi T1D", "—"],
+        ["Altre patologie", "—"],
+        ["Microinfusore", "MiniMed 780G + Guardian 4"],
+        ["Livello attivita'", "—"],
     ]
     story.append(make_table(profile, col_widths=[35*mm, 115*mm]))
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph(
-        "<b>Nota su osteoporosi e menopausa precoce:</b> la menopausa precoce (dall'eta' di ~42 anni) "
-        "e' un fattore di rischio importante per l'osteoporosi a causa della carenza estrogenica. "
-        "L'attivita' fisica regolare e' molto benefica per la densita' ossea. "
-        "Esercizi con impatto (corsa, salti) e con carico (pesi) sono i piu' efficaci. "
-        "Assicurarsi di mantenere un adeguato apporto di calcio (1200 mg/giorno) e vitamina D.", styles["BodyIt"]))
-    story.append(Spacer(1, 2*mm))
-    story.append(Paragraph(
-        "<b>Nota sul peso:</b> con 54 kg la sensibilita' insulinica e' generalmente alta, "
-        "il che spiega perche' anche piccole dosi di insulina residua (IOB) combinate con "
-        "l'esercizio possono causare crolli importanti della glicemia.", styles["BodyIt"]))
+        "<b>Nota:</b> l'attivita' fisica regolare e' molto benefica per la gestione del diabete. "
+        "Esercizi con impatto e con carico sono efficaci per la salute generale. "
+        "Assicurarsi di mantenere un adeguato apporto nutrizionale.", styles["BodyIt"]))
     story.append(Spacer(1, 4*mm))
 
-    story.append(Paragraph("La Routine Quotidiana di Nuria", styles["SectionHead"]))
+    story.append(Paragraph("Routine Quotidiana", styles["SectionHead"]))
     routine = [
         ["Ora", "Attivita'", "Tipo esercizio", "Durata"],
         ["7:00-7:30", "Bici casa-scuola", "Aerobico moderato", "30 min"],

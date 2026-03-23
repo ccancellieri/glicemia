@@ -206,9 +206,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "settings":
+        voice_reply = context.user_data.get("voice_reply", False)
         await query.edit_message_text(
             msg("btn_settings", lang),
-            reply_markup=settings_menu(lang),
+            reply_markup=settings_menu(lang, voice_reply=voice_reply),
+        )
+
+    elif data == "toggle_voice_reply":
+        current = context.user_data.get("voice_reply", False)
+        context.user_data["voice_reply"] = not current
+        if context.user_data["voice_reply"]:
+            status_msg = msg("voice_reply_enabled", lang)
+        else:
+            status_msg = msg("voice_reply_disabled", lang)
+        await query.edit_message_text(
+            status_msg,
+            reply_markup=settings_menu(lang, voice_reply=context.user_data["voice_reply"]),
         )
 
     elif data == "set_language":
@@ -381,7 +394,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle voice messages — transcribe + AI response with full context."""
+    """Handle voice messages — transcribe + AI response + optional voice reply."""
     if not _is_authorized(update.effective_user.id):
         return
 
@@ -404,6 +417,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lang=lang,
             )
             await thinking_msg.edit_text(response, parse_mode="Markdown")
+
+            # Send voice reply if enabled
+            if context.user_data.get("voice_reply", False):
+                await _send_voice_reply(update, response, lang)
         finally:
             session.close()
 
@@ -561,6 +578,23 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response, parse_mode="Markdown")
     finally:
         session.close()
+
+
+async def _send_voice_reply(update: Update, text: str, lang: str):
+    """Generate TTS audio and send as a Telegram voice message."""
+    try:
+        from app.bot.tts import text_to_speech
+        import io
+
+        audio_bytes = await text_to_speech(text, lang)
+        if audio_bytes:
+            await update.message.reply_voice(
+                voice=io.BytesIO(audio_bytes),
+            )
+        else:
+            log.warning("TTS returned no audio, skipping voice reply")
+    except Exception as e:
+        log.error("Failed to send voice reply: %s", e)
 
 
 def _format_activity_plan(plan: dict, lang: str) -> str:

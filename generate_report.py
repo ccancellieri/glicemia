@@ -390,7 +390,7 @@ def generate_projections_pdf():
 
     # ── Title ──
     story.append(Paragraph("Proiezioni di Miglioramento", styles["Title2"]))
-    story.append(Paragraph("MiniMed 780G - Nuria Perez Diez (46 anni, 54 kg, T1D da 20 anni) - Marzo 2026", styles["Subtitle"]))
+    story.append(Paragraph("MiniMed 780G - T1D Patient", styles["Subtitle"]))
     story.append(Spacer(1, 4*mm))
 
     # ── Key numbers ──
@@ -487,7 +487,7 @@ def generate_projections_pdf():
     story.append(Paragraph(
         "Le proiezioni seguenti sono stime <b>conservative</b> che tengono conto delle ipoglicemie "
         "esistenti. Basate sulla letteratura clinica del MiniMed 780G "
-        "(Passanisi 2024, CO-PILOT 2026) e sull'analisi dei pattern specifici di Nuria. "
+        "(Passanisi 2024, CO-PILOT 2026) e sull'analisi dei pattern specifici del paziente. "
         "Ogni passo si aggiunge al precedente. L'ISF viene rivalutato solo come ultimo passo, "
         "una volta verificato che le ipo non siano peggiorate.", styles["BodyIt"]))
     story.append(Spacer(1, 3*mm))
@@ -571,12 +571,11 @@ def generate_instructions_pdf():
 
     # ── Title ──
     story.append(Paragraph("Istruzioni per l'Ottimizzazione", styles["Title2"]))
-    story.append(Paragraph("MiniMed 780G - Nuria Perez Diez (46 anni, 54 kg, T1D da 20 anni)", styles["Subtitle"]))
+    story.append(Paragraph("MiniMed 780G - T1D Patient", styles["Subtitle"]))
     story.append(Spacer(1, 4*mm))
 
     story.append(Paragraph(
         "Piano operativo: prima la dieta e la gestione sport, poi le impostazioni pompa. "
-        "Vegetariana, osteoporosi, menopausa precoce. Insulina totale 12.8 U/giorno (0.24 U/kg). "
         "Da discutere e validare con il diabetologo.",
         styles["BodyIt"]))
     story.append(Spacer(1, 2*mm))
@@ -660,7 +659,7 @@ def generate_instructions_pdf():
     story.append(Paragraph(
         "<b>Perche' ora e non prima:</b> Col protocollo sport gia' attivo, le ipo serali "
         "saranno ridotte. Quindi e' sicuro aumentare leggermente la copertura insulinica "
-        "della cena (-10%). Cena vegetariana con 25-30g CHO (pane cereali + tofu/tempeh + verdure).", styles["BodyIt"]))
+        "della cena (-10%). Cena con 25-30g CHO (pane cereali + proteine + verdure).", styles["BodyIt"]))
     story.append(Paragraph("<b>Come:</b> Menu > Impostazioni Bolo > Rapporto I/CHO > 18:00-23:00 > 9 g/U", styles["BodyIt"]))
     story.append(Paragraph("<b>Effetto atteso:</b> TIR da ~64% a ~66% (+2%)", styles["BodyIt"]))
 
@@ -717,13 +716,13 @@ def generate_instructions_pdf():
     story.append(Spacer(1, 6*mm))
 
     # ── Diet summary ──
-    story.append(Paragraph("Riepilogo Alimentare (Vegetariana)", styles["SectionHead"]))
+    story.append(Paragraph("Riepilogo Alimentare", styles["SectionHead"]))
     diet_table = [
         ["Fascia", "CHO", "Consiglio"],
         ["Colazione", "~5g (no bolo)", "Latte soia + caffe' + poca frutta\nGia' OK come fai"],
         ["Pranzo", "25g (basso IG!)", "Pre-bolo 15 min! Ceci, lenticchie,\npasta integrale. NO pane bianco"],
         ["Snack sport", "15-20g (NO bolo!)", "Banana o fichi secchi\nNO taralli (IG troppo alto)"],
-        ["Cena", "25-30g", "Tofu/tempeh + verdure + pane cereali\nFonte calcio per osteoporosi"],
+        ["Cena", "25-30g", "Proteine + verdure + pane cereali\nFonte calcio"],
         ["Notte", "0-10g solo se SG<120", "Solo se necessario per ipo"],
     ]
     story.append(make_table(diet_table, col_widths=[25*mm, 32*mm, 90*mm]))

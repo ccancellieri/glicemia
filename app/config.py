@@ -34,9 +34,18 @@ class Settings:
     OPENWEATHER_API_KEY: str = os.getenv("OPENWEATHER_API_KEY", "")
     ORS_API_KEY: str = os.getenv("ORS_API_KEY", "")
 
+    # WebApp
+    WEBAPP_PORT: int = int(os.getenv("WEBAPP_PORT", "8443"))
+    WEBAPP_URL: str = os.getenv("WEBAPP_URL", "")
+
+    # TTS (Text-to-Speech for voice replies)
+    # edge-tts is used by default (free, no key needed)
+    # Set TTS_MODEL for LiteLLM TTS fallback (e.g., "openai/tts-1")
+    TTS_MODEL: str = os.getenv("TTS_MODEL", "")
+
     # Language & patient
     LANGUAGE: str = os.getenv("LANGUAGE", "it")
-    PATIENT_NAME: str = os.getenv("PATIENT_NAME", "Nuria")
+    PATIENT_NAME: str = os.getenv("PATIENT_NAME", "Patient")
 
 
 settings = Settings()

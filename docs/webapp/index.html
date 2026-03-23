@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GliceMia</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<style>
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --text: var(--tg-theme-text-color, #000000);
+  --hint: var(--tg-theme-hint-color, #999999);
+  --link: var(--tg-theme-link-color, #2678b6);
+  --btn: var(--tg-theme-button-color, #2678b6);
+  --btn-text: var(--tg-theme-button-text-color, #ffffff);
+  --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  --section-bg: var(--tg-theme-section-bg-color, var(--bg));
+  --green: #4CAF50; --yellow: #FFC107; --red: #F44336; --blue: #2196F3;
+  --orange: #FF9800;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg); color: var(--text);
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+.tabs {
+  display: flex; position: sticky; top: 0; z-index: 100;
+  background: var(--secondary-bg); border-bottom: 1px solid rgba(128,128,128,0.15);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.tab {
+  flex: 0 0 auto; padding: 10px 14px; font-size: 12px; font-weight: 600;
+  color: var(--hint); cursor: pointer; white-space: nowrap;
+  border-bottom: 2px solid transparent; transition: all 0.2s;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.tab.active { color: var(--btn); border-bottom-color: var(--btn); }
+.tab-icon { font-size: 18px; }
+.page { display: none; padding: 12px; padding-bottom: 80px; }
+.page.active { display: block; }
+.card {
+  background: var(--section-bg); border-radius: 12px; padding: 16px; margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.card-title { font-size: 13px; font-weight: 600; color: var(--hint); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Glucose display */
+.glucose-main { text-align: center; padding: 20px 0; }
+.glucose-value { font-size: 72px; font-weight: 700; line-height: 1; }
+.glucose-unit { font-size: 16px; color: var(--hint); }
+.glucose-trend { font-size: 32px; margin-left: 4px; }
+.glucose-age { font-size: 13px; color: var(--hint); margin-top: 4px; }
+.glucose-predictions { display: flex; justify-content: center; gap: 16px; margin-top: 12px; }
+.pred-badge {
+  background: var(--secondary-bg); border-radius: 8px; padding: 6px 12px;
+  font-size: 13px; font-weight: 600;
+}
+.pred-label { font-size: 11px; color: var(--hint); }
+
+/* Pump status */
+.pump-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pump-item {
+  flex: 1; min-width: 70px; text-align: center; padding: 8px;
+  background: var(--secondary-bg); border-radius: 8px;
+}
+.pump-val { font-size: 18px; font-weight: 700; }
+.pump-label { font-size: 10px; color: var(--hint); text-transform: uppercase; }
+
+/* Quick actions */
+.actions-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.action-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 8px; border-radius: 12px; border: none;
+  background: var(--secondary-bg); color: var(--text); cursor: pointer;
+  font-size: 12px; font-weight: 500; transition: transform 0.1s;
+}
+.action-btn:active { transform: scale(0.95); }
+.action-icon { font-size: 28px; }
+
+/* TIR bar */
+.tir-bar { display: flex; height: 24px; border-radius: 12px; overflow: hidden; margin: 8px 0; }
+.tir-segment { transition: width 0.5s; }
+.tir-legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; margin-top: 6px; }
+.tir-legend-item { display: flex; align-items: center; gap: 4px; }
+.tir-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* Charts */
+.chart-range { display: flex; gap: 6px; margin-bottom: 12px; }
+.range-btn {
+  padding: 6px 14px; border-radius: 16px; border: 1px solid rgba(128,128,128,0.2);
+  background: transparent; color: var(--text); font-size: 13px; cursor: pointer;
+}
+.range-btn.active { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+.chart-container { position: relative; height: 250px; }
+
+/* Metrics grid */
+.metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.metric-card {
+  text-align: center; padding: 12px; border-radius: 10px;
+  background: var(--secondary-bg);
+}
+.metric-value { font-size: 24px; font-weight: 700; }
+.metric-label { font-size: 11px; color: var(--hint); text-transform: uppercase; }
+
+/* Chat */
+.chat-messages { max-height: 55vh; overflow-y: auto; padding-bottom: 8px; }
+.chat-msg { max-width: 85%; margin: 6px 0; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.4; word-wrap: break-word; }
+.chat-msg.user { background: var(--btn); color: var(--btn-text); margin-left: auto; border-bottom-right-radius: 4px; }
+.chat-msg.assistant { background: var(--secondary-bg); border-bottom-left-radius: 4px; }
+.chat-input-row { display: flex; gap: 8px; margin-top: 8px; }
+.chat-input {
+  flex: 1; padding: 10px 14px; border-radius: 20px; border: 1px solid rgba(128,128,128,0.3);
+  background: var(--secondary-bg); color: var(--text); font-size: 15px; outline: none;
+}
+.send-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: none;
+  background: var(--btn); color: var(--btn-text); font-size: 18px; cursor: pointer;
+}
+
+/* Food analysis */
+.food-preview { width: 100%; max-height: 200px; object-fit: cover; border-radius: 10px; margin: 8px 0; }
+.food-result { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+
+/* Activity planner */
+.activity-types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+.activity-type-btn {
+  padding: 10px 4px; border-radius: 10px; border: 2px solid transparent;
+  background: var(--secondary-bg); text-align: center; cursor: pointer; font-size: 11px;
+}
+.activity-type-btn.active { border-color: var(--btn); background: var(--btn); color: var(--btn-text); }
+.activity-type-icon { font-size: 24px; display: block; margin-bottom: 2px; }
+.slider-row { margin: 12px 0; }
+.slider-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+input[type="range"] { width: 100%; accent-color: var(--btn); }
+.map-placeholder {
+  height: 180px; border-radius: 10px; background: var(--secondary-bg);
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  gap: 8px; cursor: pointer; border: 2px dashed rgba(128,128,128,0.3);
+}
+.map-placeholder:active { background: rgba(128,128,128,0.15); }
+
+/* Camera */
+.camera-area {
+  position: relative; border-radius: 12px; overflow: hidden;
+  background: #000; margin-bottom: 12px;
+}
+.camera-area video, .camera-area canvas { width: 100%; display: block; border-radius: 12px; }
+.camera-controls { display: flex; justify-content: center; gap: 16px; margin-top: 8px; }
+.cam-btn {
+  width: 56px; height: 56px; border-radius: 50%; border: 3px solid var(--btn);
+  background: transparent; color: var(--btn); font-size: 22px; cursor: pointer;
+}
+.cam-btn.primary { background: var(--btn); color: var(--btn-text); }
+
+/* Alerts banner */
+.alert-banner {
+  padding: 10px 14px; border-radius: 10px; margin-bottom: 10px;
+  font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+}
+.alert-urgent { background: #FFEBEE; color: var(--red); }
+.alert-warning { background: #FFF8E1; color: var(--orange); }
+.alert-info { background: #E3F2FD; color: var(--blue); }
+
+/* Settings */
+.setting-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 0; border-bottom: 1px solid rgba(128,128,128,0.1);
+}
+.setting-label { font-size: 15px; }
+.setting-value { font-size: 15px; color: var(--hint); }
+.condition-badge {
+  display: inline-block; padding: 4px 10px; border-radius: 12px;
+  background: var(--secondary-bg); font-size: 12px; margin: 2px;
+}
+
+/* Patterns */
+.pattern-bar { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
+.pattern-col {
+  flex: 1; border-radius: 3px 3px 0 0; min-width: 8px;
+  transition: height 0.3s; position: relative;
+}
+.pattern-col-label {
+  position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%);
+  font-size: 8px; color: var(--hint); white-space: nowrap;
+}
+
+/* Slots table */
+.slots-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+.slots-table th { text-align: left; padding: 6px 4px; color: var(--hint); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+.slots-table td { padding: 6px 4px; border-top: 1px solid rgba(128,128,128,0.1); }
+
+/* Voice recording */
+.voice-btn {
+  width: 64px; height: 64px; border-radius: 50%; border: none;
+  font-size: 28px; cursor: pointer; transition: all 0.2s;
+}
+.voice-btn.idle { background: var(--secondary-bg); color: var(--text); }
+.voice-btn.recording { background: var(--red); color: white; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+
+/* Loading */
+.loading { text-align: center; padding: 40px; color: var(--hint); }
+.spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--secondary-bg); border-top-color: var(--btn); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- Tab navigation -->
+<div class="tabs">
+  <div class="tab active" data-tab="dashboard"><span class="tab-icon">🩸</span>Home</div>
+  <div class="tab" data-tab="charts"><span class="tab-icon">📈</span>Grafici</div>
+  <div class="tab" data-tab="food"><span class="tab-icon">📸</span>Cibo</div>
+  <div class="tab" data-tab="activity"><span class="tab-icon">🚴</span>Attivita</div>
+  <div class="tab" data-tab="reports"><span class="tab-icon">📊</span>Report</div>
+  <div class="tab" data-tab="chat"><span class="tab-icon">💬</span>Chat</div>
+  <div class="tab" data-tab="settings"><span class="tab-icon">⚙️</span>Profilo</div>
+</div>
+
+<!-- ==================== DASHBOARD ==================== -->
+<div class="page active" id="page-dashboard">
+  <div id="alerts-area"></div>
+
+  <div class="card">
+    <div class="glucose-main">
+      <span class="glucose-value" id="sg-value">---</span>
+      <span class="glucose-trend" id="sg-trend"></span>
+      <div class="glucose-unit">mg/dL</div>
+      <div class="glucose-age" id="sg-age"></div>
+      <div class="glucose-predictions">
+        <div class="pred-badge"><div class="pred-label">30 min</div><span id="pred-30">--</span></div>
+        <div class="pred-badge"><div class="pred-label">60 min</div><span id="pred-60">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="pump-card" style="display:none">
+    <div class="card-title" data-i18n="pump">Pompa</div>
+    <div class="pump-row">
+      <div class="pump-item"><div class="pump-val" id="pump-iob">--</div><div class="pump-label">IOB (U)</div></div>
+      <div class="pump-item"><div class="pump-val" id="pump-basal">--</div><div class="pump-label">Basale</div></div>
+      <div class="pump-item"><div class="pump-val" id="pump-reservoir">--</div><div class="pump-label">Serb.</div></div>
+      <div class="pump-item"><div class="pump-val" id="pump-battery">--</div><div class="pump-label">Batt.</div></div>
+      <div class="pump-item"><div class="pump-val" id="pump-mode">--</div><div class="pump-label">Modo</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="last_3h">Ultime 3 ore</div>
+    <div class="chart-container"><canvas id="sparkline-chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="today">Oggi</div>
+    <div id="today-tir"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="quick_actions">Azioni rapide</div>
+    <div class="actions-grid">
+      <button class="action-btn" onclick="switchTab('food')"><span class="action-icon">📸</span>Analizza cibo</button>
+      <button class="action-btn" onclick="switchTab('activity')"><span class="action-icon">🗺️</span>Attivita</button>
+      <button class="action-btn" onclick="switchTab('reports')"><span class="action-icon">📊</span>Report</button>
+      <button class="action-btn" onclick="switchTab('chat')"><span class="action-icon">💬</span>Chiedi</button>
+      <button class="action-btn" onclick="quickEstimate()"><span class="action-icon">💉</span>Stima bolo</button>
+      <button class="action-btn" onclick="quickPredict()"><span class="action-icon">🔮</span>Previsione</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CHARTS ==================== -->
+<div class="page" id="page-charts">
+  <div class="card">
+    <div class="card-title" data-i18n="glucose">Glicemia</div>
+    <div class="chart-range">
+      <button class="range-btn active" data-hours="6">6h</button>
+      <button class="range-btn" data-hours="12">12h</button>
+      <button class="range-btn" data-hours="24">24h</button>
+      <button class="range-btn" data-hours="72">3g</button>
+      <button class="range-btn" data-hours="168">7g</button>
+    </div>
+    <div class="chart-container"><canvas id="glucose-chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="hourly_patterns">Pattern orari (14 giorni)</div>
+    <div id="hourly-pattern" class="pattern-bar"></div>
+    <div style="height:20px"></div>
+  </div>
+</div>
+
+<!-- ==================== FOOD PHOTO ==================== -->
+<div class="page" id="page-food">
+  <div class="card">
+    <div class="card-title" data-i18n="analyze_food">Analizza cibo</div>
+    <div class="camera-area" id="camera-area">
+      <video id="camera-video" autoplay playsinline></video>
+      <canvas id="camera-canvas" class="hidden"></canvas>
+    </div>
+    <div class="camera-controls">
+      <button class="cam-btn" onclick="flipCamera()">🔄</button>
+      <button class="cam-btn primary" id="capture-btn" onclick="capturePhoto()">📸</button>
+      <button class="cam-btn hidden" id="retake-btn" onclick="retakePhoto()">↩️</button>
+    </div>
+    <div style="margin-top:8px; text-align:center; font-size:13px; color:var(--hint)">oppure</div>
+    <div style="text-align:center; margin-top:8px">
+      <input type="file" id="file-input" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(event)">
+      <button class="action-btn" style="display:inline-flex; padding:10px 20px;" onclick="document.getElementById('file-input').click()">
+        <span class="action-icon">🖼️</span>Scegli dalla galleria
+      </button>
+    </div>
+    <img id="food-preview" class="food-preview hidden">
+    <input class="chat-input" id="food-caption" placeholder="Descrizione (opzionale): es. pasta al pesto" style="margin-top:8px; width:100%">
+    <button class="action-btn hidden" id="analyze-btn" onclick="analyzeFood()" style="width:100%; margin-top:8px; flex-direction:row; justify-content:center; gap:8px; background:var(--btn); color:var(--btn-text);">
+      <span class="action-icon">🔍</span>Analizza
+    </button>
+  </div>
+  <div class="card hidden" id="food-result-card">
+    <div class="card-title" data-i18n="result">Risultato</div>
+    <div class="food-result" id="food-result"></div>
+  </div>
+</div>
+
+<!-- ==================== ACTIVITY PLANNER ==================== -->
+<div class="page" id="page-activity">
+  <div class="card">
+    <div class="card-title" data-i18n="activity_type">Tipo di attivita</div>
+    <div class="activity-types">
+      <div class="activity-type-btn active" data-type="cycling"><span class="activity-type-icon">🚴</span>Bici</div>
+      <div class="activity-type-btn" data-type="walking"><span class="activity-type-icon">🥾</span>Camminata</div>
+      <div class="activity-type-btn" data-type="running"><span class="activity-type-icon">🏃</span>Corsa</div>
+      <div class="activity-type-btn" data-type="gym"><span class="activity-type-icon">🏋️</span>Palestra</div>
+      <div class="activity-type-btn" data-type="swimming"><span class="activity-type-icon">🏊</span>Nuoto</div>
+      <div class="activity-type-btn" data-type="hiking"><span class="activity-type-icon">⛰️</span>Escursione</div>
+      <div class="activity-type-btn" data-type="yoga"><span class="activity-type-icon">🧘</span>Yoga</div>
+      <div class="activity-type-btn" data-type="other"><span class="activity-type-icon">⚡</span>Altro</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="duration_intensity">Durata e intensita</div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Durata</span><span id="duration-val">60 min</span></div>
+      <input type="range" id="duration-slider" min="15" max="240" value="60" step="15" oninput="document.getElementById('duration-val').textContent=this.value+' min'">
+    </div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Intensita</span><span id="intensity-val">Moderata</span></div>
+      <input type="range" id="intensity-slider" min="1" max="3" value="2" oninput="updateIntensityLabel(this.value)">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="position">Posizione</div>
+    <div class="map-placeholder" id="map-start" onclick="getLocation('start')">
+      <span style="font-size:28px">📍</span>
+      <span style="font-size:13px" id="start-location-text">Tocca per partenza (GPS)</span>
+    </div>
+    <div style="height:8px"></div>
+    <div class="map-placeholder" id="map-end" onclick="getLocation('end')">
+      <span style="font-size:28px">🏁</span>
+      <span style="font-size:13px" id="end-location-text">Tocca per destinazione (GPS)</span>
+    </div>
+  </div>
+
+  <button class="action-btn" onclick="planActivity()" style="width:100%; flex-direction:row; justify-content:center; gap:8px; background:var(--btn); color:var(--btn-text); padding:14px;">
+    <span class="action-icon">🗺️</span>Calcola piano
+  </button>
+
+  <div class="card hidden" id="plan-result">
+    <div class="card-title">Piano attivita</div>
+    <div id="plan-content"></div>
+  </div>
+</div>
+
+<!-- ==================== REPORTS ==================== -->
+<div class="page" id="page-reports">
+  <div class="card">
+    <div class="chart-range" id="report-period">
+      <button class="range-btn" data-period="today">Oggi</button>
+      <button class="range-btn active" data-period="week">Settimana</button>
+      <button class="range-btn" data-period="month">Mese</button>
+      <button class="range-btn" data-period="3month">3 Mesi</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="tir">Time in Range</div>
+    <div id="report-tir"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="metrics">Metriche</div>
+    <div class="metrics-grid" id="report-metrics"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="slot_analysis">Analisi fasce orarie</div>
+    <div id="report-slots"></div>
+  </div>
+</div>
+
+<!-- ==================== CHAT ==================== -->
+<div class="page" id="page-chat">
+  <div class="card" style="padding: 8px;">
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-row">
+      <button class="voice-btn idle" id="voice-btn" onclick="toggleVoice()">🎤</button>
+      <input class="chat-input" id="chat-input" placeholder="Scrivi un messaggio..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="send-btn" onclick="sendChat()">→</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SETTINGS ==================== -->
+<div class="page" id="page-settings">
+  <div class="card">
+    <div class="card-title" data-i18n="patient_profile">Profilo paziente</div>
+    <div id="profile-info">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="active_conditions">Condizioni attive</div>
+    <div id="conditions-list">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="insulin_settings">Impostazioni insulina</div>
+    <div id="insulin-settings">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== Init ===== */
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+/*
+ * API base URL: when hosted on GitHub Pages, the API runs elsewhere.
+ * Pass ?api=https://your-tunnel.ngrok-free.app as URL parameter,
+ * or it defaults to same origin (when served by the Python backend).
+ */
+const urlParams = new URLSearchParams(window.location.search);
+const API = urlParams.get('api') || window.location.origin;
+const initData = tg.initData || '';
+
+const TREND_ARROWS = {
+  'UP': '^^', 'RISING_FAST': '^^', 'RISING': '^', 'UP_SLIGHTLY': '/',
+  'FLAT': '->', 'DOWN_SLIGHTLY': '\\', 'DOWN': 'v', 'FALLING': 'v',
+  'FALLING_FAST': 'vv', 'DOUBLE_DOWN': 'vv',
+};
+/* Unicode trend arrows for display */
+const TREND_DISPLAY = {
+  'UP': '\u2191\u2191', 'RISING_FAST': '\u2191\u2191', 'RISING': '\u2191',
+  'UP_SLIGHTLY': '\u2197', 'FLAT': '\u2192', 'DOWN_SLIGHTLY': '\u2198',
+  'DOWN': '\u2193', 'FALLING': '\u2193', 'FALLING_FAST': '\u2193\u2193',
+  'DOUBLE_DOWN': '\u2193\u2193',
+};
+
+let glucoseChart = null, sparklineChart = null;
+let currentCamera = 'environment';
+let cameraStream = null;
+let capturedPhotoB64 = null;
+let activityLocations = { start: null, end: null };
+let mediaRecorder = null, audioChunks = [];
+let T = {}; /* i18n translations, loaded from API */
+
+/* ===== Sanitizer helper ===== */
+function sanitize(html) {
+  return DOMPurify.sanitize(html, { ALLOWED_TAGS: ['b', 'i', 'code', 'br', 'span', 'div', 'table', 'tr', 'td', 'th', 'thead', 'tbody'], ALLOWED_ATTR: ['class', 'style'] });
+}
+
+/* ===== API calls ===== */
+async function api(path, opts = {}) {
+  const headers = { 'Authorization': 'tma ' + initData, 'Content-Type': 'application/json' };
+  const res = await fetch(API + path, Object.assign({}, opts, { headers: headers }));
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'API error');
+  return json.data;
+}
+
+/* ===== DOM helpers (safe) ===== */
+function setText(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
+function setDisplay(id, show) {
+  document.getElementById(id).style.display = show ? '' : 'none';
+}
+
+function clearChildren(el) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function createEl(tag, attrs, children) {
+  const el = document.createElement(tag);
+  if (attrs) {
+    Object.keys(attrs).forEach(function(k) {
+      if (k === 'className') el.className = attrs[k];
+      else if (k === 'textContent') el.textContent = attrs[k];
+      else if (k === 'onclick') el.onclick = attrs[k];
+      else el.setAttribute(k, attrs[k]);
+    });
+  }
+  if (children) {
+    (Array.isArray(children) ? children : [children]).forEach(function(c) {
+      if (typeof c === 'string') el.appendChild(document.createTextNode(c));
+      else if (c) el.appendChild(c);
+    });
+  }
+  return el;
+}
+
+/* ===== Tab switching ===== */
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.toggle('active', t.dataset.tab === tab); });
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.toggle('active', p.id === 'page-' + tab); });
+  if (tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+
+  if (tab === 'dashboard') loadDashboard();
+  if (tab === 'charts') loadCharts();
+  if (tab === 'reports') loadReport('week');
+  if (tab === 'food') initCamera();
+  if (tab === 'settings') loadSettings();
+}
+document.querySelectorAll('.tab').forEach(function(t) { t.addEventListener('click', function() { switchTab(t.dataset.tab); }); });
+
+/* ===== Dashboard ===== */
+async function loadDashboard() {
+  try {
+    var data = await api('/api/status');
+    var g = data.glucose;
+
+    // Glucose value + color
+    var el = document.getElementById('sg-value');
+    if (g.value) {
+      el.textContent = Math.round(g.value);
+      el.style.color = g.value < 70 ? 'var(--blue)' : g.value > 250 ? 'var(--red)' : g.value > 180 ? 'var(--yellow)' : 'var(--green)';
+    } else {
+      el.textContent = '---';
+    }
+
+    // Trend
+    var trend = g.trend || '';
+    setText('sg-trend', TREND_DISPLAY[trend] || '');
+
+    // Age
+    if (g.age_minutes != null) {
+      setText('sg-age', g.age_minutes < 60 ? g.age_minutes + ' min fa' : Math.round(g.age_minutes / 60) + 'h fa');
+    }
+
+    // Predictions
+    var p = data.predictions;
+    setText('pred-30', p.min30 ? String(p.min30) : '--');
+    setText('pred-60', p.min60 ? String(p.min60) : '--');
+
+    // Pump
+    if (data.pump) {
+      setDisplay('pump-card', true);
+      setText('pump-iob', data.pump.iob != null ? data.pump.iob.toFixed(1) : '--');
+      setText('pump-basal', data.pump.basal != null ? data.pump.basal.toFixed(2) : '--');
+      setText('pump-reservoir', data.pump.reservoir != null ? String(Math.round(data.pump.reservoir)) : '--');
+      setText('pump-battery', data.pump.battery != null ? data.pump.battery + '%' : '--');
+      setText('pump-mode', data.pump.mode || '--');
+    }
+
+    // Sparkline
+    renderSparkline(data.sparkline);
+    loadTodayTIR();
+    loadAlerts();
+  } catch (e) {
+    console.error('Dashboard error:', e);
+  }
+}
+
+async function loadAlerts() {
+  try {
+    var alerts = await api('/api/alerts');
+    var area = document.getElementById('alerts-area');
+    clearChildren(area);
+    alerts.forEach(function(a) {
+      var cls = a.severity === 'urgent' ? 'alert-urgent' : a.severity === 'warning' ? 'alert-warning' : 'alert-info';
+      var icon = a.severity === 'urgent' ? '\uD83D\uDEA8' : a.severity === 'warning' ? '\u26A0\uFE0F' : '\u2139\uFE0F';
+      var text = icon + ' ' + a.type + ': ' + (a.sg ? a.sg + ' mg/dL' : '') + (a.predicted_sg ? ' \u2192 ' + a.predicted_sg : '');
+      area.appendChild(createEl('div', { className: 'alert-banner ' + cls, textContent: text }));
+    });
+  } catch (e) {}
+}
+
+async function loadTodayTIR() {
+  try {
+    var data = await api('/api/metrics?period=today');
+    if (data.metrics) renderTIR(data.metrics, 'today-tir');
+  } catch (e) {}
+}
+
+function renderSparkline(points) {
+  var ctx = document.getElementById('sparkline-chart');
+  if (sparklineChart) sparklineChart.destroy();
+  if (!points || points.length < 2) return;
+
+  sparklineChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: points.map(function(p) { return new Date(p.t); }),
+      datasets: [{
+        data: points.map(function(p) { return p.v; }),
+        borderColor: 'var(--btn)',
+        backgroundColor: 'rgba(38,120,182,0.1)',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: 'time', display: true, ticks: { font: { size: 10 }, maxTicksLimit: 6 } },
+        y: { min: 40, max: 300, ticks: { font: { size: 10 } } }
+      },
+    },
+    plugins: [{
+      id: 'targetRange',
+      beforeDraw: function(chart) {
+        var c = chart.ctx, area = chart.chartArea, y = chart.scales.y;
+        var top = y.getPixelForValue(180), bottom = y.getPixelForValue(70);
+        c.save();
+        c.fillStyle = 'rgba(76,175,80,0.08)';
+        c.fillRect(area.left, top, area.right - area.left, bottom - top);
+        c.restore();
+      }
+    }]
+  });
+}
+
+/* ===== Charts ===== */
+async function loadCharts(hours) {
+  hours = hours || 6;
+  try {
+    var readings = await api('/api/readings?hours=' + hours);
+    renderGlucoseChart(readings);
+    loadPatterns();
+  } catch (e) { console.error('Charts error:', e); }
+}
+
+function renderGlucoseChart(readings) {
+  var ctx = document.getElementById('glucose-chart');
+  if (glucoseChart) glucoseChart.destroy();
+  if (!readings.length) return;
+
+  var colors = readings.map(function(r) {
+    return r.v < 54 ? '#2196F3' : r.v < 70 ? '#64B5F6' : r.v <= 180 ? '#4CAF50' : r.v <= 250 ? '#FFC107' : '#F44336';
+  });
+
+  glucoseChart = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        data: readings.map(function(r) { return { x: new Date(r.t), y: r.v }; }),
+        pointBackgroundColor: colors,
+        pointRadius: 2, pointHoverRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: 'time', ticks: { font: { size: 10 }, maxTicksLimit: 8 } },
+        y: { min: 40, max: 350, ticks: { font: { size: 10 } } },
+      },
+    },
+    plugins: [{
+      id: 'targetRange',
+      beforeDraw: function(chart) {
+        var c = chart.ctx, area = chart.chartArea, y = chart.scales.y;
+        var top = y.getPixelForValue(180), bottom = y.getPixelForValue(70);
+        c.save();
+        c.fillStyle = 'rgba(76,175,80,0.08)';
+        c.fillRect(area.left, top, area.right - area.left, bottom - top);
+        c.strokeStyle = 'rgba(76,175,80,0.3)'; c.setLineDash([5, 5]);
+        c.beginPath(); c.moveTo(area.left, top); c.lineTo(area.right, top); c.stroke();
+        c.beginPath(); c.moveTo(area.left, bottom); c.lineTo(area.right, bottom); c.stroke();
+        c.restore();
+      }
+    }]
+  });
+}
+
+document.querySelectorAll('.chart-range .range-btn').forEach(function(btn) {
+  if (btn.closest('#report-period')) return;
+  btn.addEventListener('click', function() {
+    btn.parentElement.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    loadCharts(parseInt(btn.dataset.hours));
+  });
+});
+
+async function loadPatterns() {
+  try {
+    var patterns = await api('/api/patterns?type=hourly');
+    var container = document.getElementById('hourly-pattern');
+    clearChildren(container);
+    if (!patterns.length) { container.appendChild(createEl('span', { style: 'font-size:13px;color:var(--hint)', textContent: 'Nessun pattern' })); return; }
+
+    var maxAvg = Math.max.apply(null, patterns.map(function(p) { return p.avg || 0; }));
+    patterns.forEach(function(p) {
+      var h = ((p.avg || 0) / maxAvg * 100).toFixed(0);
+      var color = (p.avg || 0) < 70 ? 'var(--blue)' : (p.avg || 0) > 180 ? 'var(--yellow)' : 'var(--green)';
+      var col = createEl('div', { className: 'pattern-col', style: 'height:' + h + '%;background:' + color, title: p.key + ': ' + (p.avg || 0).toFixed(0) + ' mg/dL, TIR ' + (p.tir || 0).toFixed(0) + '%' });
+      col.appendChild(createEl('span', { className: 'pattern-col-label', textContent: p.key.replace(':00', '') }));
+      container.appendChild(col);
+    });
+  } catch (e) {}
+}
+
+/* ===== Food Photo ===== */
+async function initCamera() {
+  if (cameraStream) return;
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: currentCamera, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false,
+    });
+    document.getElementById('camera-video').srcObject = cameraStream;
+  } catch (e) {
+    console.warn('Camera not available:', e);
+  }
+}
+
+function flipCamera() {
+  currentCamera = currentCamera === 'environment' ? 'user' : 'environment';
+  if (cameraStream) { cameraStream.getTracks().forEach(function(t) { t.stop(); }); cameraStream = null; }
+  initCamera();
+}
+
+function capturePhoto() {
+  var video = document.getElementById('camera-video');
+  var canvas = document.getElementById('camera-canvas');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  capturedPhotoB64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+  document.getElementById('food-preview').src = 'data:image/jpeg;base64,' + capturedPhotoB64;
+  document.getElementById('food-preview').classList.remove('hidden');
+  document.getElementById('analyze-btn').classList.remove('hidden');
+  document.getElementById('retake-btn').classList.remove('hidden');
+  video.classList.add('hidden');
+  canvas.classList.add('hidden');
+  if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+}
+
+function retakePhoto() {
+  capturedPhotoB64 = null;
+  document.getElementById('food-preview').classList.add('hidden');
+  document.getElementById('analyze-btn').classList.add('hidden');
+  document.getElementById('retake-btn').classList.add('hidden');
+  document.getElementById('camera-video').classList.remove('hidden');
+  document.getElementById('food-result-card').classList.add('hidden');
+}
+
+function handleFileSelect(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function() {
+    capturedPhotoB64 = reader.result.split(',')[1];
+    document.getElementById('food-preview').src = reader.result;
+    document.getElementById('food-preview').classList.remove('hidden');
+    document.getElementById('analyze-btn').classList.remove('hidden');
+    document.getElementById('camera-video').classList.add('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function analyzeFood() {
+  if (!capturedPhotoB64) return;
+  var btn = document.getElementById('analyze-btn');
+  btn.textContent = 'Analizzando...'; btn.disabled = true;
+
+  try {
+    var caption = document.getElementById('food-caption').value;
+    var data = await api('/api/analyze-food', {
+      method: 'POST',
+      body: JSON.stringify({ photo: capturedPhotoB64, caption: caption }),
+    });
+    document.getElementById('food-result-card').classList.remove('hidden');
+    document.getElementById('food-result').textContent = data.analysis || 'Nessun risultato';
+    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) {
+    document.getElementById('food-result-card').classList.remove('hidden');
+    document.getElementById('food-result').textContent = 'Errore: ' + e.message;
+  }
+  btn.textContent = 'Analizza'; btn.disabled = false;
+}
+
+/* ===== Activity Planner ===== */
+document.querySelectorAll('.activity-type-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.activity-type-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    if (tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+  });
+});
+
+function updateIntensityLabel(val) {
+  var labels = { '1': 'Leggera', '2': 'Moderata', '3': 'Intensa' };
+  setText('intensity-val', labels[val] || 'Moderata');
+}
+
+function getLocation(which) {
+  if (!navigator.geolocation) { alert('GPS non disponibile'); return; }
+  var textId = which === 'start' ? 'start-location-text' : 'end-location-text';
+  setText(textId, 'Localizzazione...');
+
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      activityLocations[which] = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      setText(textId, pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4));
+      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    },
+    function(err) { setText(textId, 'Errore GPS: ' + err.message); },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+}
+
+async function planActivity() {
+  var type = (document.querySelector('.activity-type-btn.active') || {}).dataset;
+  type = type ? type.type : 'cycling';
+  var duration = parseInt(document.getElementById('duration-slider').value);
+  var intensityMap = { '1': 'low', '2': 'moderate', '3': 'vigorous' };
+  var intensity = intensityMap[document.getElementById('intensity-slider').value] || 'moderate';
+
+  var body = { type: type, duration: duration, intensity: intensity };
+  if (activityLocations.start) { body.start_lat = activityLocations.start.lat; body.start_lon = activityLocations.start.lon; }
+  if (activityLocations.end) { body.end_lat = activityLocations.end.lat; body.end_lon = activityLocations.end.lon; }
+
+  var resultEl = document.getElementById('plan-result');
+  var contentEl = document.getElementById('plan-content');
+  resultEl.classList.remove('hidden');
+  clearChildren(contentEl);
+  contentEl.appendChild(createEl('div', { className: 'loading' }, [createEl('div', { className: 'spinner' })]));
+
+  try {
+    var data = await api('/api/plan-activity', { method: 'POST', body: JSON.stringify(body) });
+    clearChildren(contentEl);
+
+    if (data.route) {
+      var routeText = 'Percorso: ' + (data.route.distance_km || 0).toFixed(1) + ' km';
+      if (data.route.elevation_gain) routeText += ' | +' + data.route.elevation_gain + 'm';
+      contentEl.appendChild(createEl('div', { style: 'margin-bottom:8px' }, [createEl('b', { textContent: routeText })]));
+    }
+    contentEl.appendChild(createEl('div', { style: 'margin-bottom:8px', textContent: 'Durata: ' + data.duration + ' min | Intensita: ' + data.intensity }));
+    if (data.calories) {
+      contentEl.appendChild(createEl('div', { style: 'margin-bottom:8px', textContent: 'Calorie stimate: ' + Math.round(data.calories) + ' kcal' }));
+    }
+    if (data.weather) {
+      contentEl.appendChild(createEl('div', { style: 'margin-bottom:8px', textContent: data.weather.temp_c + '\u00B0C, ' + data.weather.description }));
+    }
+    if (data.impact) {
+      contentEl.appendChild(createEl('div', { style: 'margin-bottom:4px' }, [createEl('b', { textContent: 'Impatto glicemico:' })]));
+      var impactDiv = createEl('div', { style: 'padding-left:8px' });
+      if (data.impact.predicted_delta) impactDiv.appendChild(createEl('div', { textContent: 'Delta stimato: ' + (data.impact.predicted_delta > 0 ? '+' : '') + data.impact.predicted_delta + ' mg/dL' }));
+      if (data.impact.predicted_sg) impactDiv.appendChild(createEl('div', { textContent: 'Glicemia stimata dopo: ' + data.impact.predicted_sg + ' mg/dL' }));
+      if (data.impact.suggestion) impactDiv.appendChild(createEl('div', { textContent: data.impact.suggestion }));
+      contentEl.appendChild(impactDiv);
+    }
+    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) {
+    clearChildren(contentEl);
+    contentEl.appendChild(createEl('div', { textContent: 'Errore: ' + e.message }));
+  }
+}
+
+/* ===== Reports ===== */
+async function loadReport(period) {
+  try {
+    var data = await api('/api/metrics?period=' + period);
+    var m = data.metrics;
+    if (!m) {
+      var el = document.getElementById('report-metrics');
+      clearChildren(el);
+      el.appendChild(createEl('div', { style: 'color:var(--hint)', textContent: 'Nessun dato' }));
+      return;
+    }
+
+    // TIR
+    renderTIR(m, 'report-tir');
+
+    // Metrics
+    var metricsEl = document.getElementById('report-metrics');
+    clearChildren(metricsEl);
+    var cards = [
+      { val: m.tir + '%', label: 'TIR (70-180)', color: m.tir >= 70 ? 'var(--green)' : m.tir >= 50 ? 'var(--yellow)' : 'var(--red)' },
+      { val: m.gmi + '%', label: 'GMI (HbA1c est.)' },
+      { val: m.cv + '%', label: 'CV (<36%)', color: m.cv < 36 ? 'var(--green)' : 'var(--yellow)' },
+      { val: String(m.mean_sg), label: 'Media (mg/dL)' },
+      { val: String(m.readings), label: 'Letture' },
+      { val: String(m.avg_bolus_per_day), label: 'Boli/giorno' },
+      { val: m.tbr1 + '%', label: 'Sotto 70' },
+      { val: m.tar1 + '%', label: 'Sopra 180' },
+    ];
+    cards.forEach(function(c) {
+      var card = createEl('div', { className: 'metric-card' });
+      var valEl = createEl('div', { className: 'metric-value', textContent: c.val });
+      if (c.color) valEl.style.color = c.color;
+      card.appendChild(valEl);
+      card.appendChild(createEl('div', { className: 'metric-label', textContent: c.label }));
+      metricsEl.appendChild(card);
+    });
+
+    // Slots
+    var slots = data.slots;
+    var slotsEl = document.getElementById('report-slots');
+    clearChildren(slotsEl);
+    if (slots && slots.length) {
+      var table = createEl('table', { className: 'slots-table' });
+      var headerRow = createEl('tr');
+      ['Fascia', 'Media', 'TIR', 'Note'].forEach(function(h) { headerRow.appendChild(createEl('th', { textContent: h })); });
+      table.appendChild(headerRow);
+      slots.forEach(function(s) {
+        var row = createEl('tr');
+        row.appendChild(createEl('td', { textContent: s.slot }));
+        row.appendChild(createEl('td', { textContent: s.mean_sg.toFixed(0) }));
+        row.appendChild(createEl('td', { textContent: s.tir_pct.toFixed(0) + '%' }));
+        var issues = (s.issues || []).map(function(i) {
+          if (i.type === 'recurring_hypo') return 'Ipo ' + i.frequency_pct + '%';
+          if (i.type === 'recurring_hyper') return 'Iper ' + i.frequency_pct + '%';
+          return '';
+        }).filter(Boolean).join(' ');
+        row.appendChild(createEl('td', { textContent: issues }));
+        table.appendChild(row);
+      });
+      slotsEl.appendChild(table);
+    }
+  } catch (e) {
+    console.error('Report error:', e);
+  }
+}
+
+function renderTIR(m, containerId) {
+  var segments = [
+    { pct: m.tbr2 || 0, color: '#2196F3', label: '<54' },
+    { pct: m.tbr1 || 0, color: '#64B5F6', label: '54-70' },
+    { pct: m.tir || 0, color: '#4CAF50', label: '70-180' },
+    { pct: m.tar1 || 0, color: '#FFC107', label: '180-250' },
+    { pct: m.tar2 || 0, color: '#F44336', label: '>250' },
+  ].filter(function(s) { return s.pct > 0; });
+
+  var container = document.getElementById(containerId);
+  clearChildren(container);
+
+  var bar = createEl('div', { className: 'tir-bar' });
+  segments.forEach(function(s) {
+    bar.appendChild(createEl('div', { className: 'tir-segment', style: 'width:' + s.pct + '%;background:' + s.color, title: s.label + ': ' + s.pct + '%' }));
+  });
+  container.appendChild(bar);
+
+  var legend = createEl('div', { className: 'tir-legend' });
+  segments.forEach(function(s) {
+    var item = createEl('span', { className: 'tir-legend-item' });
+    item.appendChild(createEl('span', { className: 'tir-dot', style: 'background:' + s.color }));
+    item.appendChild(document.createTextNode(s.label + ': ' + s.pct + '%'));
+    legend.appendChild(item);
+  });
+  container.appendChild(legend);
+}
+
+document.querySelectorAll('#report-period .range-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#report-period .range-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    loadReport(btn.dataset.period);
+  });
+});
+
+/* ===== Chat ===== */
+function addChatMsg(role, text) {
+  var container = document.getElementById('chat-messages');
+  var msg = createEl('div', { className: 'chat-msg ' + role });
+  if (role === 'assistant') {
+    /* Format markdown safely with DOMPurify */
+    var formatted = text
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.+?)\*/g, '<i>$1</i>')
+      .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/\n/g, '<br>');
+    msg.innerHTML = sanitize(formatted);
+  } else {
+    msg.textContent = text;
+  }
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+  return msg;
+}
+
+function addChatLoading() {
+  var container = document.getElementById('chat-messages');
+  var msg = createEl('div', { className: 'chat-msg assistant' });
+  msg.id = 'chat-loading';
+  msg.appendChild(createEl('div', { className: 'spinner' }));
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+}
+
+function removeChatLoading() {
+  var el = document.getElementById('chat-loading');
+  if (el) el.parentNode.removeChild(el);
+}
+
+async function sendChat() {
+  var input = document.getElementById('chat-input');
+  var message = input.value.trim();
+  if (!message) return;
+  input.value = '';
+
+  addChatMsg('user', message);
+  addChatLoading();
+
+  try {
+    var data = await api('/api/chat', { method: 'POST', body: JSON.stringify({ message: message }) });
+    removeChatLoading();
+    addChatMsg('assistant', data.response);
+    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) {
+    removeChatLoading();
+    addChatMsg('assistant', 'Errore: ' + e.message);
+  }
+}
+
+/* Init chat with welcome message */
+addChatMsg('assistant', 'Ciao! Sono GliceMia. Chiedimi qualsiasi cosa sulla gestione del diabete, la tua glicemia, o cosa fare in una situazione specifica.');
+
+/* ===== Voice recording ===== */
+async function toggleVoice() {
+  var btn = document.getElementById('voice-btn');
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    btn.className = 'voice-btn idle';
+    btn.textContent = '\uD83C\uDFA4';
+    return;
+  }
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = function(e) { audioChunks.push(e.data); };
+    mediaRecorder.onstop = async function() {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      var blob = new Blob(audioChunks, { type: 'audio/webm' });
+      var reader = new FileReader();
+      reader.onloadend = async function() {
+        switchTab('chat');
+        addChatMsg('user', '[Messaggio vocale]');
+        addChatLoading();
+        try {
+          var data = await api('/api/chat', { method: 'POST', body: JSON.stringify({ message: '[Voice message - transcribe and respond]', audio: reader.result.split(',')[1] }) });
+          removeChatLoading();
+          addChatMsg('assistant', data.response);
+        } catch (e) {
+          removeChatLoading();
+          addChatMsg('assistant', 'Errore: ' + e.message);
+        }
+      };
+      reader.readAsDataURL(blob);
+    };
+    mediaRecorder.start();
+    btn.className = 'voice-btn recording';
+    btn.textContent = '\u23F9\uFE0F';
+    if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('heavy');
+  } catch (e) {
+    alert('Microfono non disponibile');
+  }
+}
+
+/* ===== Quick actions ===== */
+async function quickEstimate() {
+  var carbs = prompt('Grammi di carboidrati:');
+  if (!carbs || isNaN(carbs)) return;
+  try {
+    var data = await api('/api/estimate-bolus', { method: 'POST', body: JSON.stringify({ carbs: parseFloat(carbs) }) });
+    alert('Stima bolo per ' + carbs + 'g CHO:\n' +
+      'Bolo cibo: ' + data.carb_bolus + ' U\n' +
+      'Correzione: ' + data.correction_bolus + ' U\n' +
+      'Totale: ' + data.total_suggested_bolus + ' U\n' +
+      'IOB: ' + data.iob_current + ' U\n' +
+      'Glicemia 2h: ' + data.predicted_sg_2h + ' mg/dL (' + data.predicted_range + ')');
+  } catch (e) { alert('Errore: ' + e.message); }
+}
+
+async function quickPredict() {
+  try {
+    var data = await api('/api/predict', { method: 'POST', body: JSON.stringify({ minutes: 60 }) });
+    alert('Previsione 60 minuti:\n' +
+      'Attuale: ' + data.current_sg + ' mg/dL\n' +
+      'Prevista: ' + data.predicted_sg + ' mg/dL\n' +
+      'Range: ' + data.range_low + '-' + data.range_high + '\n' +
+      'Trend: ' + (data.trend_contribution > 0 ? '+' : '') + data.trend_contribution.toFixed(0) + '\n' +
+      'IOB: ' + (data.iob_contribution > 0 ? '+' : '') + data.iob_contribution.toFixed(0));
+  } catch (e) { alert('Errore: ' + e.message); }
+}
+
+/* ===== Settings ===== */
+async function loadSettings() {
+  try {
+    var results = await Promise.all([
+      api('/api/profile'),
+      api('/api/conditions'),
+      api('/api/insulin'),
+    ]);
+    var profile = results[0], conditions = results[1], insulin = results[2];
+
+    // Profile
+    var profileEl = document.getElementById('profile-info');
+    clearChildren(profileEl);
+    if (profile) {
+      var fields = [
+        ['Nome', profile.name], ['Tipo', profile.diabetes_type],
+        ['Pompa', profile.pump || '--'], ['Sensore', profile.sensor || '--'],
+        ['Dieta', profile.diet || '--'], ['Lingua', profile.language || '--'],
+      ];
+      fields.forEach(function(f) {
+        var item = createEl('div', { className: 'setting-item' });
+        item.appendChild(createEl('span', { className: 'setting-label', textContent: f[0] }));
+        item.appendChild(createEl('span', { className: 'setting-value', textContent: f[1] }));
+        profileEl.appendChild(item);
+      });
+    }
+
+    // Conditions
+    var condEl = document.getElementById('conditions-list');
+    clearChildren(condEl);
+    if (conditions.length) {
+      conditions.forEach(function(c) {
+        condEl.appendChild(createEl('span', { className: 'condition-badge', textContent: c.name + ' (' + c.severity + ')' }));
+      });
+    } else {
+      condEl.appendChild(createEl('span', { style: 'color:var(--hint)', textContent: 'Nessuna condizione attiva' }));
+    }
+
+    // Insulin
+    var insEl = document.getElementById('insulin-settings');
+    clearChildren(insEl);
+    if (insulin.length) {
+      var table = createEl('table', { className: 'slots-table' });
+      var header = createEl('tr');
+      ['Orario', 'I:C', 'ISF', 'Target'].forEach(function(h) { header.appendChild(createEl('th', { textContent: h })); });
+      table.appendChild(header);
+      insulin.forEach(function(s) {
+        var row = createEl('tr');
+        [s.time_start, String(s.ic_ratio), String(s.isf), String(s.target)].forEach(function(v) { row.appendChild(createEl('td', { textContent: v })); });
+        table.appendChild(row);
+      });
+      insEl.appendChild(table);
+    } else {
+      insEl.appendChild(createEl('span', { style: 'color:var(--hint)', textContent: 'Nessuna impostazione' }));
+    }
+  } catch (e) { console.error('Settings error:', e); }
+}
+
+/* ===== Auto-refresh ===== */
+setInterval(function() {
+  if (document.querySelector('#page-dashboard.active')) loadDashboard();
+}, 60000);
+
+/* ===== i18n ===== */
+function t(key) { return T[key] || key; }
+
+async function loadI18n() {
+  try {
+    T = await api('/api/i18n');
+    translateUI();
+  } catch (e) {
+    console.warn('i18n load failed, using defaults:', e);
+  }
+}
+
+function translateUI() {
+  /* Tabs */
+  var tabMap = { dashboard: 'home', charts: 'charts', food: 'food', activity: 'activity', reports: 'reports', chat: 'chat', settings: 'profile' };
+  document.querySelectorAll('.tab').forEach(function(tab) {
+    var key = tabMap[tab.dataset.tab];
+    if (key && T[key]) {
+      var icon = tab.querySelector('.tab-icon');
+      var iconText = icon ? icon.textContent : '';
+      clearChildren(tab);
+      if (icon) tab.appendChild(icon);
+      tab.appendChild(document.createTextNode(T[key]));
+    }
+  });
+
+  /* Static labels via data-i18n attribute */
+  document.querySelectorAll('[data-i18n]').forEach(function(el) {
+    var key = el.getAttribute('data-i18n');
+    if (T[key]) el.textContent = T[key];
+  });
+
+  /* Specific elements */
+  var mappings = {
+    'food-caption': { attr: 'placeholder', key: 'caption_hint' },
+    'chat-input': { attr: 'placeholder', key: 'write_message' },
+    'start-location-text': { key: 'tap_start' },
+    'end-location-text': { key: 'tap_end' },
+  };
+  Object.keys(mappings).forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var m = mappings[id];
+    if (T[m.key]) {
+      if (m.attr) el.setAttribute(m.attr, T[m.key]);
+      else el.textContent = T[m.key];
+    }
+  });
+}
+
+/* ===== Initial load ===== */
+loadI18n().then(function() { loadDashboard(); });
+</script>
+</body>
+</html>

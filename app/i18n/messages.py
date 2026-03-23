@@ -128,6 +128,30 @@ MESSAGES = {
         "es": "🤖 Modelo IA",
         "fr": "🤖 Modèle IA",
     },
+    "btn_voice_reply_on": {
+        "it": "🔊 Risposte vocali: ON",
+        "en": "🔊 Voice replies: ON",
+        "es": "🔊 Respuestas de voz: ON",
+        "fr": "🔊 Réponses vocales : ON",
+    },
+    "btn_voice_reply_off": {
+        "it": "🔇 Risposte vocali: OFF",
+        "en": "🔇 Voice replies: OFF",
+        "es": "🔇 Respuestas de voz: OFF",
+        "fr": "🔇 Réponses vocales : OFF",
+    },
+    "voice_reply_enabled": {
+        "it": "🔊 Risposte vocali attivate! Ora rispondo anche con messaggi audio.",
+        "en": "🔊 Voice replies enabled! I'll now also reply with audio messages.",
+        "es": "🔊 ¡Respuestas de voz activadas! Ahora también respondo con mensajes de audio.",
+        "fr": "🔊 Réponses vocales activées ! Je réponds maintenant aussi par message audio.",
+    },
+    "voice_reply_disabled": {
+        "it": "🔇 Risposte vocali disattivate. Rispondo solo con testo.",
+        "en": "🔇 Voice replies disabled. I'll reply with text only.",
+        "es": "🔇 Respuestas de voz desactivadas. Respondo solo con texto.",
+        "fr": "🔇 Réponses vocales désactivées. Je réponds uniquement par texte.",
+    },
 
     # --- Common ---
     "btn_back": {

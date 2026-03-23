@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GliceMia — Intelligent Type 1 Diabetes Companion</title>
+    <meta name="description" content="Open-source AI-powered companion for Type 1 Diabetes management. Real-time glucose monitoring, smart bolus estimation, activity planning, and proactive alerts.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Language Selector -->
+    <nav class="lang-bar">
+        <div class="container lang-bar-inner">
+            <div class="logo">
+                <span class="logo-icon">💉</span> GliceMia
+            </div>
+            <div class="nav-links">
+                <a href="#features" data-i18n="nav_features">Features</a>
+                <a href="#how-it-works" data-i18n="nav_how">How It Works</a>
+                <a href="#tech" data-i18n="nav_tech">Technology</a>
+                <a href="#privacy" data-i18n="nav_privacy">Privacy</a>
+                <a href="#get-started" data-i18n="nav_start">Get Started</a>
+            </div>
+            <div class="lang-switcher">
+                <button class="lang-btn active" data-lang="en">EN</button>
+                <button class="lang-btn" data-lang="it">IT</button>
+                <button class="lang-btn" data-lang="es">ES</button>
+                <button class="lang-btn" data-lang="fr">FR</button>
+            </div>
+            <button class="mobile-menu-btn" aria-label="Menu">&#9776;</button>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <header class="hero">
+        <div class="container">
+            <div class="hero-badge" data-i18n="hero_badge">Open Source &middot; AGPL-3.0</div>
+            <h1 data-i18n="hero_title">Your Intelligent<br>Diabetes Companion</h1>
+            <p class="hero-sub" data-i18n="hero_sub">AI-powered glucose monitoring, smart bolus estimation, activity planning, and proactive alerts &mdash; all through Telegram. Free, private, and open source.</p>
+            <div class="hero-actions">
+                <a href="#get-started" class="btn btn-primary" data-i18n="hero_cta">Get Started Free</a>
+                <a href="https://github.com/ccancellieri/glicemia" class="btn btn-outline" data-i18n="hero_github">View on GitHub</a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-number">11</span>
+                    <span class="stat-label" data-i18n="stat_alerts">Alert Types</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number">4</span>
+                    <span class="stat-label" data-i18n="stat_langs">Languages</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number">12</span>
+                    <span class="stat-label" data-i18n="stat_context">AI Context Layers</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number">0</span>
+                    <span class="stat-label" data-i18n="stat_cost">Monthly Cost*</span>
+                </div>
+            </div>
+            <p class="hero-note" data-i18n="hero_note">*Using free Gemini API or local Ollama</p>
+        </div>
+        <div class="hero-gradient"></div>
+    </header>
+
+    <!-- Problem / Solution -->
+    <section class="section section-alt" id="why">
+        <div class="container">
+            <div class="two-col">
+                <div class="col">
+                    <h2 data-i18n="why_title">Why GliceMia?</h2>
+                    <p data-i18n="why_text">Managing Type 1 Diabetes is a 24/7 job. Between carb counting, bolus calculations, activity adjustments, and trend watching, decision fatigue is real. Commercial solutions are expensive, closed-source, and often lack the personalized intelligence you need.</p>
+                </div>
+                <div class="col">
+                    <div class="solution-card">
+                        <h3 data-i18n="why_solution_title">GliceMia is different</h3>
+                        <ul class="check-list">
+                            <li data-i18n="why_s1">Runs on your own device &mdash; your data stays yours</li>
+                            <li data-i18n="why_s2">Works with free AI models (Gemini, Ollama)</li>
+                            <li data-i18n="why_s3">Connects to your Medtronic pump in real-time</li>
+                            <li data-i18n="why_s4">Actually gives you numbers, not just "consult your doctor"</li>
+                            <li data-i18n="why_s5">Open source &mdash; inspect, modify, contribute</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section" id="features">
+        <div class="container">
+            <h2 class="section-title" data-i18n="features_title">Everything You Need</h2>
+            <p class="section-sub" data-i18n="features_sub">A comprehensive toolkit for daily diabetes management, powered by AI that understands your unique patterns.</p>
+
+            <div class="features-grid">
+                <!-- Feature 1: Real-time Monitoring -->
+                <div class="feature-card feature-highlight">
+                    <div class="feature-icon">📊</div>
+                    <h3 data-i18n="f1_title">Real-Time Glucose Monitoring</h3>
+                    <p data-i18n="f1_desc">Live glucose values, trends, IOB, and 30/60-minute predictions pulled directly from your Medtronic CareLink pump every 5 minutes. See your full picture at a glance.</p>
+                    <div class="feature-details">
+                        <span class="tag" data-i18n="f1_t1">CGM Integration</span>
+                        <span class="tag" data-i18n="f1_t2">Trend Arrows</span>
+                        <span class="tag" data-i18n="f1_t3">Predictions</span>
+                        <span class="tag" data-i18n="f1_t4">IOB Tracking</span>
+                    </div>
+                </div>
+
+                <!-- Feature 2: Smart Bolus -->
+                <div class="feature-card">
+                    <div class="feature-icon">🧮</div>
+                    <h3 data-i18n="f2_title">Smart Bolus Estimation</h3>
+                    <p data-i18n="f2_desc">Snap a photo of your meal &mdash; GliceMia estimates carbs, calculates insulin using your personal I:C ratio, ISF, current glucose, and IOB. Get a concrete predicted glucose value after the bolus.</p>
+                </div>
+
+                <!-- Feature 3: Proactive Alerts -->
+                <div class="feature-card">
+                    <div class="feature-icon">🚨</div>
+                    <h3 data-i18n="f3_title">Proactive Alert System</h3>
+                    <p data-i18n="f3_desc">11 types of intelligent alerts: hypo/hyper detection, rapid trends, predicted lows/highs, sensor gaps, pump suspensions, reservoir and battery warnings. Smart cooldowns prevent alert fatigue.</p>
+                </div>
+
+                <!-- Feature 4: Activity Planner -->
+                <div class="feature-card">
+                    <div class="feature-icon">🚴</div>
+                    <h3 data-i18n="f4_title">Activity Planner</h3>
+                    <p data-i18n="f4_desc">Plan walks, runs, or bike rides with GPS route analysis. Get distance, elevation, weather forecast, estimated calories, and &mdash; most importantly &mdash; predicted glucose impact with a final value.</p>
+                </div>
+
+                <!-- Feature 5: Food Photo Analysis -->
+                <div class="feature-card">
+                    <div class="feature-icon">📸</div>
+                    <h3 data-i18n="f5_title">Food Photo Analysis</h3>
+                    <p data-i18n="f5_desc">Send a photo of your plate. The AI identifies foods, estimates carbs, fats, and proteins, then calculates the suggested bolus. Works with any cuisine, any portion size.</p>
+                </div>
+
+                <!-- Feature 6: Voice Messages -->
+                <div class="feature-card">
+                    <div class="feature-icon">🎤</div>
+                    <h3 data-i18n="f6_title">Voice Messages</h3>
+                    <p data-i18n="f6_desc">Ask questions by voice. GliceMia transcribes your message, understands the context, and can even reply with text-to-speech. Hands-free diabetes management.</p>
+                </div>
+
+                <!-- Feature 7: Pattern Analysis -->
+                <div class="feature-card">
+                    <div class="feature-icon">📈</div>
+                    <h3 data-i18n="f7_title">Pattern Analysis & Metrics</h3>
+                    <p data-i18n="f7_desc">Automatic calculation of Time-in-Range (TIR%), GMI, Coefficient of Variation, hourly/daily/monthly patterns. Identify your most challenging time slots and track improvement over time.</p>
+                </div>
+
+                <!-- Feature 8: Health Connectors -->
+                <div class="feature-card">
+                    <div class="feature-icon">🔗</div>
+                    <h3 data-i18n="f8_title">Health Data Connectors</h3>
+                    <p data-i18n="f8_desc">Import data from CareLink CSV exports, Apple Health ZIP archives, and lab result PDFs. Automatic extraction of HbA1c, eGFR, liver and kidney function values. FHIR-compliant storage.</p>
+                </div>
+
+                <!-- Feature 9: Multi-language -->
+                <div class="feature-card">
+                    <div class="feature-icon">🌍</div>
+                    <h3 data-i18n="f9_title">Multi-Language Support</h3>
+                    <p data-i18n="f9_desc">Full interface in Italian, English, Spanish, and French. Every button, alert, status message, and help text is localized. Switch languages anytime from the settings menu.</p>
+                </div>
+
+                <!-- Feature 10: MCP Integration -->
+                <div class="feature-card">
+                    <div class="feature-icon">🖥️</div>
+                    <h3 data-i18n="f10_title">Claude Desktop Integration</h3>
+                    <p data-i18n="f10_desc">Optional MCP server exposes 11 tools to Claude Desktop for deep glucose pattern analysis, trend investigation, and complex questions that go beyond the Telegram interface.</p>
+                </div>
+
+                <!-- Feature 11: Reports & Charts -->
+                <div class="feature-card">
+                    <div class="feature-icon">📄</div>
+                    <h3 data-i18n="f11_title">Reports & Charts</h3>
+                    <p data-i18n="f11_desc">Generate visual glucose charts, daily/weekly reports, and exportable summaries. Share with your endocrinologist or keep for your own records.</p>
+                </div>
+
+                <!-- Feature 12: AI Context -->
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3 data-i18n="f12_title">12-Layer AI Context</h3>
+                    <p data-i18n="f12_desc">Every AI response is informed by 12 layers: current glucose, trends, IOB, recent meals, activity history, 7-day patterns, 30-day metrics, conditions, insulin settings, and more. No generic answers.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="section section-alt" id="how-it-works">
+        <div class="container">
+            <h2 class="section-title" data-i18n="how_title">How It Works</h2>
+            <p class="section-sub" data-i18n="how_sub">GliceMia runs on your own machine and communicates through Telegram. Here's the flow:</p>
+
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3 data-i18n="step1_title">Connect Your Pump</h3>
+                    <p data-i18n="step1_desc">Enter your CareLink credentials. GliceMia polls your Medtronic MiniMed 780G every 5 minutes for real-time glucose, IOB, reservoir level, and pump status.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3 data-i18n="step2_title">Chat on Telegram</h3>
+                    <p data-i18n="step2_desc">Open your Telegram bot. Ask questions in text or voice, send food photos, request your status, plan activities, or import health data &mdash; all through a friendly menu-driven interface.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3 data-i18n="step3_title">Get Intelligent Answers</h3>
+                    <p data-i18n="step3_desc">The AI analyzes your question with 12 layers of personal context. It provides concrete numbers: bolus suggestions with predicted glucose values, activity impact forecasts, and pattern insights.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h3 data-i18n="step4_title">Receive Proactive Alerts</h3>
+                    <p data-i18n="step4_desc">GliceMia watches your glucose 24/7. When it detects a dangerous trend, predicts a low, or notices a pump issue, it alerts you immediately with context and suggested actions.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- AI Section -->
+    <section class="section" id="ai">
+        <div class="container">
+            <h2 class="section-title" data-i18n="ai_title">AI That Actually Helps</h2>
+            <p class="section-sub" data-i18n="ai_sub">Unlike generic health chatbots, GliceMia's AI is designed to give you real, actionable answers.</p>
+
+            <div class="two-col">
+                <div class="col">
+                    <div class="ai-principle">
+                        <h4 data-i18n="ai_p1_title">Always Gives Numbers</h4>
+                        <p data-i18n="ai_p1_desc">GliceMia never says "consult your doctor" or "check with your Bolus Wizard." It always provides its own estimated bolus dose and predicted final glucose value, clearly labeled as educational suggestions.</p>
+                    </div>
+                    <div class="ai-principle">
+                        <h4 data-i18n="ai_p2_title">Deeply Contextualized</h4>
+                        <p data-i18n="ai_p2_desc">Every response considers your current glucose, trend, IOB, recent meals, activity history, weekly patterns, monthly metrics, diagnosed conditions, and insulin settings. No two users get the same answer.</p>
+                    </div>
+                    <div class="ai-principle">
+                        <h4 data-i18n="ai_p3_title">Predicts Forward</h4>
+                        <p data-i18n="ai_p3_desc">Instead of just telling you where you are, GliceMia tells you where you're going. "Your glucose is 180 and rising. Based on your IOB and trend, you'll likely be at 220 in 30 minutes."</p>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="chat-demo">
+                        <div class="chat-bubble user" data-i18n="chat_user1">I'm about to eat a plate of pasta with tomato sauce. Current glucose 145, trend stable.</div>
+                        <div class="chat-bubble bot">
+                            <strong>GliceMia:</strong>
+                            <span data-i18n="chat_bot1">I estimate ~65g of carbs for a standard plate of pasta with tomato sauce. With your current I:C ratio of 1:8 and ISF of 40, considering your IOB of 0.3U and glucose at 145 mg/dL:<br><br>Suggested bolus: <strong>7.8U</strong><br>Predicted glucose in 2h: <strong>~130 mg/dL</strong><br><br>This should bring you nicely into range. If it's a larger portion, add 1U per extra 8g of carbs.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Technology -->
+    <section class="section section-alt" id="tech">
+        <div class="container">
+            <h2 class="section-title" data-i18n="tech_title">Built on Solid Foundations</h2>
+            <p class="section-sub" data-i18n="tech_sub">Enterprise-grade technology, completely open source.</p>
+
+            <div class="tech-grid">
+                <div class="tech-card">
+                    <h4 data-i18n="tech_ai_title">Flexible AI</h4>
+                    <p data-i18n="tech_ai_desc">LiteLLM routes to any AI provider: free Gemini, local Ollama, Claude, GPT-4o, or any OpenAI-compatible endpoint. Switch models with a single environment variable.</p>
+                </div>
+                <div class="tech-card">
+                    <h4 data-i18n="tech_db_title">FHIR-Compliant Database</h4>
+                    <p data-i18n="tech_db_desc">14 SQLAlchemy tables following FHIR health data standards. SNOMED-coded conditions, structured observations, and full insulin history. Optional AES-256 encryption with SQLCipher.</p>
+                </div>
+                <div class="tech-card">
+                    <h4 data-i18n="tech_rt_title">Real-Time Pipeline</h4>
+                    <p data-i18n="tech_rt_desc">Async Python with aiohttp and APScheduler. CareLink polling, alert detection, pattern computation, and Telegram message handling all run concurrently without blocking.</p>
+                </div>
+                <div class="tech-card">
+                    <h4 data-i18n="tech_int_title">Health Integrations</h4>
+                    <p data-i18n="tech_int_desc">CareLink real-time API, Apple Health ZIP import, FHIR client, lab PDF extraction. OpenRouteService for GPS routes, OpenWeatherMap for activity weather. All optional.</p>
+                </div>
+            </div>
+
+            <div class="tech-stack-bar">
+                <span>Python 3.11+</span>
+                <span>SQLAlchemy</span>
+                <span>LiteLLM</span>
+                <span>python-telegram-bot</span>
+                <span>aiohttp</span>
+                <span>matplotlib</span>
+                <span>edge-tts</span>
+                <span>SQLCipher</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Alert Types -->
+    <section class="section" id="alerts">
+        <div class="container">
+            <h2 class="section-title" data-i18n="alerts_title">11 Intelligent Alert Types</h2>
+            <p class="section-sub" data-i18n="alerts_sub">GliceMia monitors your glucose 24/7 and alerts you before problems become emergencies.</p>
+
+            <div class="alerts-grid">
+                <div class="alert-card urgent">
+                    <div class="alert-level" data-i18n="alert_urgent">URGENT</div>
+                    <ul>
+                        <li data-i18n="alert_u1">Hypoglycemia (&lt;54 mg/dL)</li>
+                        <li data-i18n="alert_u2">Rapidly falling (&gt;2.5 mg/dL/min)</li>
+                        <li data-i18n="alert_u3">Sensor data gap</li>
+                        <li data-i18n="alert_u4">Pump suspended</li>
+                    </ul>
+                </div>
+                <div class="alert-card warning">
+                    <div class="alert-level" data-i18n="alert_warning">WARNING</div>
+                    <ul>
+                        <li data-i18n="alert_w1">Low glucose (70 mg/dL)</li>
+                        <li data-i18n="alert_w2">High glucose (250 mg/dL)</li>
+                        <li data-i18n="alert_w3">Predicted low/high</li>
+                        <li data-i18n="alert_w4">Rising fast (&gt;3 mg/dL/min)</li>
+                    </ul>
+                </div>
+                <div class="alert-card info">
+                    <div class="alert-level" data-i18n="alert_info">INFO</div>
+                    <ul>
+                        <li data-i18n="alert_i1">Reservoir running low</li>
+                        <li data-i18n="alert_i2">Battery running low</li>
+                        <li data-i18n="alert_i3">Prolonged high (&gt;3h at &gt;250)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Privacy -->
+    <section class="section section-alt" id="privacy">
+        <div class="container">
+            <h2 class="section-title" data-i18n="privacy_title">Your Data, Your Control</h2>
+            <p class="section-sub" data-i18n="privacy_sub">GliceMia is designed with privacy as a core principle, not an afterthought.</p>
+
+            <div class="privacy-grid">
+                <div class="privacy-item">
+                    <div class="privacy-icon">🏠</div>
+                    <h4 data-i18n="priv1_title">Runs Locally</h4>
+                    <p data-i18n="priv1_desc">GliceMia runs on your own device. Your health data never passes through our servers because there are no servers &mdash; it's your instance, your database.</p>
+                </div>
+                <div class="privacy-item">
+                    <div class="privacy-icon">🔒</div>
+                    <h4 data-i18n="priv2_title">Encrypted Storage</h4>
+                    <p data-i18n="priv2_desc">Optional AES-256 encryption via SQLCipher. Set a passphrase and your entire database is encrypted at rest. WAL mode ensures no unencrypted data touches disk.</p>
+                </div>
+                <div class="privacy-item">
+                    <div class="privacy-icon">👤</div>
+                    <h4 data-i18n="priv3_title">Access Control</h4>
+                    <p data-i18n="priv3_desc">Only allowed Telegram user IDs can interact with the bot. No public access, no shared accounts, no anonymous queries. Your data is accessible only to you.</p>
+                </div>
+                <div class="privacy-item">
+                    <div class="privacy-icon">📖</div>
+                    <h4 data-i18n="priv4_title">Open Source</h4>
+                    <p data-i18n="priv4_desc">Every line of code is auditable. AGPL-3.0 license means anyone can inspect how your data is handled. No hidden telemetry, no tracking, no data collection.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Compatibility -->
+    <section class="section" id="compatibility">
+        <div class="container">
+            <h2 class="section-title" data-i18n="compat_title">Works With What You Have</h2>
+            <p class="section-sub" data-i18n="compat_sub">Designed for the Medtronic ecosystem, with growing support for other platforms.</p>
+
+            <div class="compat-grid">
+                <div class="compat-item">
+                    <h4 data-i18n="compat_pump_title">Insulin Pumps</h4>
+                    <p data-i18n="compat_pump_desc">Medtronic MiniMed 780G via CareLink real-time API. Other CareLink-compatible pumps may also work.</p>
+                </div>
+                <div class="compat-item">
+                    <h4 data-i18n="compat_ai_title">AI Providers</h4>
+                    <p data-i18n="compat_ai_desc">Google Gemini (free), Ollama (local, free), Anthropic Claude, OpenAI GPT-4o, or any LiteLLM-compatible provider.</p>
+                </div>
+                <div class="compat-item">
+                    <h4 data-i18n="compat_data_title">Data Sources</h4>
+                    <p data-i18n="compat_data_desc">CareLink CSV exports, Apple Health ZIP archives, lab result PDFs, FHIR API endpoints.</p>
+                </div>
+                <div class="compat-item">
+                    <h4 data-i18n="compat_platform_title">Platforms</h4>
+                    <p data-i18n="compat_platform_desc">Runs on macOS, Linux, or any system with Python 3.11+. Docker support planned. Access via Telegram on any device.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Get Started -->
+    <section class="section section-dark" id="get-started">
+        <div class="container">
+            <h2 class="section-title" data-i18n="start_title">Get Started in Minutes</h2>
+            <p class="section-sub" data-i18n="start_sub">Three steps to your personal diabetes companion.</p>
+
+            <div class="start-steps">
+                <div class="start-step">
+                    <div class="start-step-num">1</div>
+                    <h4 data-i18n="start_s1_title">Clone & Configure</h4>
+                    <pre><code>git clone https://github.com/ccancellieri/glicemia
+cd glicemia
+cp .env.example .env
+# Edit .env with your keys</code></pre>
+                </div>
+                <div class="start-step">
+                    <div class="start-step-num">2</div>
+                    <h4 data-i18n="start_s2_title">Install & Setup</h4>
+                    <pre><code>python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python scripts/seed_demo.py</code></pre>
+                </div>
+                <div class="start-step">
+                    <div class="start-step-num">3</div>
+                    <h4 data-i18n="start_s3_title">Run</h4>
+                    <pre><code>python agent.py</code></pre>
+                    <p data-i18n="start_s3_desc">Open Telegram and start chatting with your bot!</p>
+                </div>
+            </div>
+
+            <div class="start-note">
+                <p data-i18n="start_note">You need a <strong>Telegram Bot Token</strong> (free from @BotFather) and a <strong>Gemini API Key</strong> (free tier available). See the <a href="https://github.com/ccancellieri/glicemia">README</a> for detailed setup instructions.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Disclaimer -->
+    <section class="section" id="disclaimer">
+        <div class="container">
+            <div class="disclaimer-box">
+                <h3 data-i18n="disc_title">Important Disclaimer</h3>
+                <p data-i18n="disc_text">GliceMia is <strong>not a medical device</strong>. It provides educational suggestions based on AI analysis. All bolus estimates, glucose predictions, and activity recommendations are informational only. Always consult with your healthcare provider for medical decisions. Users must accept a liability waiver before using the system. Never rely solely on GliceMia for critical treatment decisions.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-col">
+                    <div class="logo">
+                        <span class="logo-icon">💉</span> GliceMia
+                    </div>
+                    <p data-i18n="footer_desc">Open-source intelligent companion for Type 1 Diabetes management.</p>
+                </div>
+                <div class="footer-col">
+                    <h4 data-i18n="footer_links">Links</h4>
+                    <a href="https://github.com/ccancellieri/glicemia" data-i18n="footer_github">GitHub Repository</a>
+                    <a href="https://github.com/ccancellieri/glicemia/issues" data-i18n="footer_issues">Report an Issue</a>
+                    <a href="https://github.com/ccancellieri/glicemia/blob/main/LICENSE" data-i18n="footer_license">License (AGPL-3.0)</a>
+                </div>
+                <div class="footer-col">
+                    <h4 data-i18n="footer_project">Project</h4>
+                    <p data-i18n="footer_built">Built with care by Carlo Cancellieri for the T1D community.</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 GliceMia &mdash; <span data-i18n="footer_rights">Released under AGPL-3.0</span></p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="i18n.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

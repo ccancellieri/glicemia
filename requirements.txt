@@ -20,6 +20,9 @@ apscheduler>=3.10
 # Charts
 matplotlib>=3.8
 
+# TTS (Text-to-Speech for voice replies — free, no API key)
+edge-tts>=6.1.0
+
 # Environment
 python-dotenv>=1.0
 

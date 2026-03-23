@@ -1,5 +1,5 @@
 """
-MiniMed 780G data analysis for Nuria Perez Diez.
+MiniMed 780G data analysis.
 Parses all patient CSV exports and computes per-period metrics.
 """
 
@@ -11,8 +11,8 @@ from datetime import datetime
 
 PATIENT_FILES = [
     ("Feb–May 2025",       "report_1y.csv"),
-    ("Sep 14–20 2025",     "Nuria Perez Diez 21-09-2025.csv"),
-    ("Sep 20–22 2025",     "Nuria Perez Diez 22-09-2025.csv"),
+    ("Sep 14–20 2025",     "patient_21-09-2025.csv"),
+    ("Sep 20–22 2025",     "patient_22-09-2025.csv"),
     ("Nov 2025–Jan 2026",  "jan2026.csv"),
     ("Feb–Mar 2026",       "march2026.csv"),
 ]
@@ -217,7 +217,7 @@ def bar(pct, width=30, fill="█", empty="░"):
 
 def print_report(results):
     print("\n" + "=" * 72)
-    print("  MiniMed 780G — Nuria Perez Diez — Multi-Period Analysis")
+    print("  MiniMed 780G — Multi-Period Analysis")
     print("=" * 72)
 
     # Table header

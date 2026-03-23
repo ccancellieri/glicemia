@@ -94,7 +94,7 @@ def parse_and_clean_data(file_path):
     
     patient_info = {}
     try:
-        patient_info['name'] = "Nuria Perez Diez"
+        patient_info['name'] = os.getenv("PATIENT_NAME", "Patient")
         patient_info['start_date'] = df.index.min().strftime('%d/%m/%Y')
         patient_info['end_date'] = df.index.max().strftime('%d/%m/%Y')
     except (IndexError, AttributeError):
@@ -429,9 +429,9 @@ def create_interactive_excel_report(patient_info, df, sim_df, weekly_model_df, a
 
 
 def main():
-    files_to_analyze = [f for f in os.listdir('.') if f.lower().endswith('.csv') and 'nuria' in f.lower()]
+    files_to_analyze = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
     if not files_to_analyze:
-        print("\nATTENZIONE: Nessun file .csv di Nuria trovato nella cartella.")
+        print("\nATTENZIONE: Nessun file .csv trovato nella cartella.")
         return
     output_folder = "output_report"
     if not os.path.exists(output_folder): os.makedirs(output_folder)

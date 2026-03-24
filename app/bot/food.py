@@ -85,13 +85,15 @@ async def analyze_food_photo(
     session: Session,
     patient_name: str,
     lang: str = "it",
+    patient_id: int = None,
+    user=None,
 ) -> tuple[str, Optional[dict]]:
     """Analyze a food photo and return formatted response + structured data.
 
     Returns:
         (formatted_message, estimation_dict or None)
     """
-    ctx = build_context(session)
+    ctx = build_context(session, patient_id=patient_id)
     system_prompt = build_system_prompt(patient_name, lang, ctx)
 
     prompt_template = FOOD_ANALYSIS_PROMPT.get(lang, FOOD_ANALYSIS_PROMPT["it"])
@@ -105,7 +107,7 @@ async def analyze_food_photo(
     ]
 
     # Get AI analysis with vision
-    ai_response = await chat_with_vision(messages, image_base64=photo_b64)
+    ai_response = await chat_with_vision(messages, image_base64=photo_b64, user=user)
 
     # Try to extract JSON from response for structured data
     carbs_estimate = _extract_carbs_from_response(ai_response)
@@ -117,6 +119,7 @@ async def analyze_food_photo(
 
         # Save meal to DB
         session.add(Meal(
+            patient_id=patient_id,
             timestamp=datetime.utcnow(),
             carbs_g=carbs_estimate,
             description=caption or "Photo analysis",

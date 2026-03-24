@@ -20,9 +20,10 @@ log = logging.getLogger(__name__)
 async def process_voice_message(
     voice_bytes: bytes,
     session: Session,
-    user_id: str,
+    patient_id: int,
     patient_name: str,
     lang: str = "it",
+    user=None,
 ) -> str:
     """Transcribe voice message and get AI response with full context.
 
@@ -42,13 +43,13 @@ async def process_voice_message(
         return errors.get(lang, errors["it"])
 
     # Build context and get AI response
-    ctx = build_context(session)
+    ctx = build_context(session, patient_id=patient_id)
     system_prompt = build_system_prompt(patient_name, lang, ctx)
 
-    # Get recent chat history
+    # Get recent chat history — private per user
     recent = (
         session.query(ChatMessage)
-        .filter_by(user_id=user_id)
+        .filter_by(patient_id=patient_id)
         .order_by(ChatMessage.timestamp.desc())
         .limit(10)
         .all()
@@ -68,17 +69,17 @@ async def process_voice_message(
     prefixed = voice_prefix.get(lang, voice_prefix["it"]) + transcript
     messages.append({"role": "user", "content": prefixed})
 
-    response = await ai_chat(messages)
+    response = await ai_chat(messages, user=user)
 
-    # Save conversation
+    # Save conversation — private per user
     session.add(ChatMessage(
-        user_id=user_id,
+        patient_id=patient_id,
         role="user",
         content=prefixed,
         metadata_json='{"type": "voice"}',
     ))
     session.add(ChatMessage(
-        user_id=user_id,
+        patient_id=patient_id,
         role="assistant",
         content=response,
     ))

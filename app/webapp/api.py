@@ -1,4 +1,4 @@
-"""REST API endpoints for the GliceMia Mini App."""
+"""REST API endpoints for the GliceMia Mini App — per-patient data isolation."""
 
 import json
 import logging
@@ -11,20 +11,27 @@ from app.database import get_session
 from app.models import (
     GlucoseReading, PumpStatus, BolusEvent, Meal,
     PatientProfile, Condition, Activity, GlucosePattern,
-    InsulinSetting,
+    InsulinSetting, UserAccount,
 )
 from app.analytics.metrics import compute_metrics, time_slot_analysis
 from app.webapp.auth import validate_init_data
+from app.users import get_user
 
 log = logging.getLogger(__name__)
 
 
-def _auth(request) -> dict | None:
-    """Validate request auth. Returns user dict or None."""
+def _auth_user(request, session) -> UserAccount | None:
+    """Validate request auth and return the UserAccount. Returns None if unauthorized."""
     init_data = request.headers.get("Authorization", "")
     if init_data.startswith("tma "):
         init_data = init_data[4:]
-    return validate_init_data(init_data)
+    user_data = validate_init_data(init_data)
+    if not user_data:
+        return None
+    tg_id = user_data.get("id")
+    if not tg_id:
+        return None
+    return get_user(session, int(tg_id))
 
 
 def _json(data, ok=True):
@@ -41,32 +48,33 @@ def _err(msg, status=400):
 
 async def get_status(request):
     """Current glucose, pump status, trend, predictions."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
         now = datetime.utcnow()
 
-        # Latest glucose
         latest_sg = (
             session.query(GlucoseReading)
-            .filter(GlucoseReading.sg.isnot(None))
+            .filter(GlucoseReading.patient_id == pid, GlucoseReading.sg.isnot(None))
             .order_by(GlucoseReading.timestamp.desc())
             .first()
         )
 
-        # Latest pump status
         latest_pump = (
             session.query(PumpStatus)
+            .filter_by(patient_id=pid)
             .order_by(PumpStatus.timestamp.desc())
             .first()
         )
 
-        # Recent readings for trend (last 30 min)
         recent = (
             session.query(GlucoseReading)
             .filter(
+                GlucoseReading.patient_id == pid,
                 GlucoseReading.timestamp >= now - timedelta(minutes=30),
                 GlucoseReading.sg.isnot(None),
             )
@@ -74,7 +82,6 @@ async def get_status(request):
             .all()
         )
 
-        # Trend calculation
         trend = "FLAT"
         trend_rate = 0.0
         if len(recent) >= 2:
@@ -91,17 +98,16 @@ async def get_status(request):
                 elif trend_rate < -1:
                     trend = "FALLING"
 
-        # Predictions
         pred_30 = None
         pred_60 = None
         if latest_sg:
             pred_30 = round(latest_sg.sg + trend_rate * 30)
             pred_60 = round(latest_sg.sg + trend_rate * 60)
 
-        # 3h sparkline
         sparkline = (
             session.query(GlucoseReading)
             .filter(
+                GlucoseReading.patient_id == pid,
                 GlucoseReading.timestamp >= now - timedelta(hours=3),
                 GlucoseReading.sg.isnot(None),
             )
@@ -124,14 +130,8 @@ async def get_status(request):
                 "battery": latest_pump.battery_pct if latest_pump else None,
                 "mode": latest_pump.auto_mode if latest_pump else None,
             } if latest_pump else None,
-            "predictions": {
-                "min30": pred_30,
-                "min60": pred_60,
-            },
-            "sparkline": [
-                {"t": r.timestamp.isoformat(), "v": r.sg}
-                for r in sparkline
-            ],
+            "predictions": {"min30": pred_30, "min60": pred_60},
+            "sparkline": [{"t": r.timestamp.isoformat(), "v": r.sg} for r in sparkline],
         }
         return _json(data)
     finally:
@@ -140,18 +140,19 @@ async def get_status(request):
 
 async def get_readings(request):
     """Glucose readings for chart."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
-    hours = int(request.query.get("hours", "24"))
-    hours = min(hours, 720)  # max 30 days
-
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        hours = min(int(request.query.get("hours", "24")), 720)
         since = datetime.utcnow() - timedelta(hours=hours)
         readings = (
             session.query(GlucoseReading)
             .filter(
+                GlucoseReading.patient_id == pid,
                 GlucoseReading.timestamp >= since,
                 GlucoseReading.sg.isnot(None),
             )
@@ -159,7 +160,6 @@ async def get_readings(request):
             .all()
         )
 
-        # Thin data for large ranges (max ~2000 points)
         step = max(1, len(readings) // 2000)
         data = [
             {"t": r.timestamp.isoformat(), "v": r.sg}
@@ -172,19 +172,21 @@ async def get_readings(request):
 
 async def get_metrics(request):
     """TIR, GMI, CV and other metrics."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
-    period = request.query.get("period", "week")
-    period_map = {"today": 1, "week": 7, "month": 30, "3month": 90}
-    days = period_map.get(period, 7)
-
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        period = request.query.get("period", "week")
+        period_map = {"today": 1, "week": 7, "month": 30, "3month": 90}
+        days = period_map.get(period, 7)
+
         now = datetime.utcnow()
         start = now - timedelta(days=days)
-        metrics = compute_metrics(session, start, now)
-        slots = time_slot_analysis(session, start, now)
+        metrics = compute_metrics(session, start, now, patient_id=pid)
+        slots = time_slot_analysis(session, start, now, patient_id=pid)
         return _json({"metrics": metrics, "slots": slots, "period": period, "days": days})
     finally:
         session.close()
@@ -192,16 +194,17 @@ async def get_metrics(request):
 
 async def get_patterns(request):
     """Pre-computed glucose patterns."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
-    period_type = request.query.get("type", "hourly")
-
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        period_type = request.query.get("type", "hourly")
         patterns = (
             session.query(GlucosePattern)
-            .filter_by(period_type=period_type)
+            .filter_by(patient_id=pid, period_type=period_type)
             .order_by(GlucosePattern.period_key)
             .all()
         )
@@ -221,16 +224,18 @@ async def get_patterns(request):
 
 async def get_boluses(request):
     """Recent bolus events."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
-    hours = int(request.query.get("hours", "24"))
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        hours = int(request.query.get("hours", "24"))
         since = datetime.utcnow() - timedelta(hours=hours)
         boluses = (
             session.query(BolusEvent)
-            .filter(BolusEvent.timestamp >= since)
+            .filter(BolusEvent.patient_id == pid, BolusEvent.timestamp >= since)
             .order_by(BolusEvent.timestamp.desc())
             .all()
         )
@@ -251,16 +256,18 @@ async def get_boluses(request):
 
 async def get_meals(request):
     """Recent meals."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
-    hours = int(request.query.get("hours", "48"))
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        hours = int(request.query.get("hours", "48"))
         since = datetime.utcnow() - timedelta(hours=hours)
         meals = (
             session.query(Meal)
-            .filter(Meal.timestamp >= since)
+            .filter(Meal.patient_id == pid, Meal.timestamp >= since)
             .order_by(Meal.timestamp.desc())
             .all()
         )
@@ -280,16 +287,18 @@ async def get_meals(request):
 
 async def get_activities(request):
     """Recent activities."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
-    days = int(request.query.get("days", "30"))
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        days = int(request.query.get("days", "30"))
         since = datetime.utcnow() - timedelta(days=days)
         activities = (
             session.query(Activity)
-            .filter(Activity.timestamp_start >= since)
+            .filter(Activity.patient_id == pid, Activity.timestamp_start >= since)
             .order_by(Activity.timestamp_start.desc())
             .all()
         )
@@ -313,14 +322,19 @@ async def get_activities(request):
 
 async def get_conditions(request):
     """Active medical conditions."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
         conditions = (
             session.query(Condition)
-            .filter(Condition.clinical_status.in_(["active", "recurrence"]))
+            .filter(
+                Condition.patient_id == pid,
+                Condition.clinical_status.in_(["active", "recurrence"]),
+            )
             .all()
         )
         data = [
@@ -340,12 +354,14 @@ async def get_conditions(request):
 
 async def get_profile(request):
     """Patient profile."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
     session = get_session()
     try:
-        p = session.query(PatientProfile).first()
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        p = session.query(PatientProfile).filter_by(patient_id=pid).first()
         if not p:
             return _json(None)
         return _json({
@@ -362,45 +378,55 @@ async def get_profile(request):
 
 async def post_chat(request):
     """Send a message to the AI and get a response."""
-    user = _auth(request)
-    if not user:
-        return _err("unauthorized", 403)
-
-    body = await request.json()
-    message = body.get("message", "").strip()
-    if not message:
-        return _err("empty message")
-
-    from app.ai.llm import chat as ai_chat
-    from app.ai.system_prompt import build_system_prompt
-    from app.ai.context import build_context
-
     session = get_session()
     try:
-        ctx = build_context(session)
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        body = await request.json()
+        message = body.get("message", "").strip()
+        if not message:
+            return _err("empty message")
+
+        from app.ai.llm import chat as ai_chat
+        from app.ai.system_prompt import build_system_prompt
+        from app.ai.context import build_context
+
+        ctx = build_context(session, patient_id=pid)
         system_prompt = build_system_prompt(
-            settings.PATIENT_NAME, settings.LANGUAGE, ctx
+            user.patient_name, user.language or "it", ctx
         )
 
-        response = await ai_chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-        ])
+        response = await ai_chat(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ],
+            user=user,
+        )
 
         return _json({"response": response})
+    except Exception:
+        log.exception("Error in post_chat")
+        return _err("Internal error", 500)
     finally:
         session.close()
 
 
 async def get_insulin_settings(request):
     """Current insulin settings (I:C, ISF by time of day)."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
         settings_list = (
             session.query(InsulinSetting)
+            .filter_by(patient_id=pid)
             .order_by(InsulinSetting.time_start)
             .all()
         )
@@ -421,45 +447,49 @@ async def get_insulin_settings(request):
 
 async def post_analyze_food(request):
     """Analyze a food photo (base64) and return carb estimate + bolus suggestion."""
-    user = _auth(request)
-    if not user:
-        return _err("unauthorized", 403)
-
-    body = await request.json()
-    photo_b64 = body.get("photo", "")
-    caption = body.get("caption", "")
-    if not photo_b64:
-        return _err("no photo")
-
-    from app.bot.food import analyze_food_photo
-
     session = get_session()
     try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+
+        body = await request.json()
+        photo_b64 = body.get("photo", "")
+        caption = body.get("caption", "")
+        if not photo_b64:
+            return _err("no photo")
+
+        from app.bot.food import analyze_food_photo
+
         result = await analyze_food_photo(
             photo_b64, caption, session,
-            settings.PATIENT_NAME, settings.LANGUAGE,
+            user.patient_name, user.language or "it",
+            patient_id=user.telegram_user_id, user=user,
         )
         return _json({"analysis": result})
+    except Exception:
+        log.exception("Error in post_analyze_food")
+        return _err("Internal error", 500)
     finally:
         session.close()
 
 
 async def post_estimate_bolus(request):
     """Estimate bolus for given carbs."""
-    user = _auth(request)
-    if not user:
-        return _err("unauthorized", 403)
-
-    body = await request.json()
-    carbs = body.get("carbs", 0)
-    if carbs <= 0:
-        return _err("carbs must be > 0")
-
-    from app.analytics.estimator import estimate_bolus
-
     session = get_session()
     try:
-        result = estimate_bolus(session, carbs_g=carbs)
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        body = await request.json()
+        carbs = body.get("carbs", 0)
+        if carbs <= 0:
+            return _err("carbs must be > 0")
+
+        from app.analytics.estimator import estimate_bolus
+        result = estimate_bolus(session, carbs_g=carbs, patient_id=pid)
         return _json(result)
     finally:
         session.close()
@@ -467,20 +497,20 @@ async def post_estimate_bolus(request):
 
 async def post_predict_glucose(request):
     """Predict glucose at a future time point."""
-    user = _auth(request)
-    if not user:
-        return _err("unauthorized", 403)
-
-    body = await request.json()
-    minutes = body.get("minutes", 60)
-    carbs = body.get("carbs", 0)
-    bolus = body.get("bolus", 0)
-
-    from app.analytics.estimator import predict_glucose
-
     session = get_session()
     try:
-        result = predict_glucose(session, minutes, carbs, bolus)
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        body = await request.json()
+        minutes = body.get("minutes", 60)
+        carbs = body.get("carbs", 0)
+        bolus = body.get("bolus", 0)
+
+        from app.analytics.estimator import predict_glucose
+        result = predict_glucose(session, minutes, carbs, bolus, patient_id=pid)
         return _json(result)
     finally:
         session.close()
@@ -488,28 +518,27 @@ async def post_predict_glucose(request):
 
 async def post_plan_activity(request):
     """Plan an activity with glucose prediction."""
-    user = _auth(request)
-    if not user:
-        return _err("unauthorized", 403)
-
-    body = await request.json()
-    activity_type = body.get("type", "cycling")
-    duration = body.get("duration", 60)
-    intensity = body.get("intensity", "moderate")
-    start_lat = body.get("start_lat")
-    start_lon = body.get("start_lon")
-    end_lat = body.get("end_lat")
-    end_lon = body.get("end_lon")
-
-    from app.activity.tracker import plan_activity
-    from app.analytics.estimator import estimate_activity_impact
-
     session = get_session()
     try:
-        # Get activity impact estimate
-        impact = estimate_activity_impact(session, activity_type, duration, intensity)
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
 
-        # If coordinates provided, get route info
+        body = await request.json()
+        activity_type = body.get("type", "cycling")
+        duration = body.get("duration", 60)
+        intensity = body.get("intensity", "moderate")
+        start_lat = body.get("start_lat")
+        start_lon = body.get("start_lon")
+        end_lat = body.get("end_lat")
+        end_lon = body.get("end_lon")
+
+        from app.activity.tracker import plan_activity
+        from app.analytics.estimator import estimate_activity_impact
+
+        impact = estimate_activity_impact(session, activity_type, duration, intensity, patient_id=pid)
+
         route_info = None
         if start_lat and start_lon and end_lat and end_lon:
             from app.activity.planner import plan_route
@@ -517,7 +546,6 @@ async def post_plan_activity(request):
                 (start_lat, start_lon), (end_lat, end_lon), activity_type
             )
 
-        # Weather if location available
         weather = None
         lat = start_lat or end_lat
         lon = start_lon or end_lon
@@ -525,10 +553,9 @@ async def post_plan_activity(request):
             from app.activity.weather import get_current_weather
             weather = get_current_weather(lat, lon)
 
-        # Calories estimate
         from app.activity.calories import estimate_calories
-        weight = 60  # default
-        profile = session.query(PatientProfile).first()
+        weight = 60
+        profile = session.query(PatientProfile).filter_by(patient_id=pid).first()
         if profile and profile.weight_kg:
             weight = profile.weight_kg
 
@@ -550,14 +577,15 @@ async def post_plan_activity(request):
 
 async def get_alerts(request):
     """Get active alerts."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
-
-    from app.alerts.engine import check_alerts
-
     session = get_session()
     try:
-        alerts = check_alerts(session)
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+        pid = user.telegram_user_id
+
+        from app.alerts.engine import check_alerts
+        alerts = check_alerts(session, patient_id=pid)
         data = [
             {
                 "type": a.alert_type,
@@ -574,12 +602,115 @@ async def get_alerts(request):
 
 
 async def get_i18n(request):
-    """Get all UI translations for the configured language."""
-    if not _auth(request):
-        return _err("unauthorized", 403)
+    """Get UI translations for the authenticated user's language."""
+    session = get_session()
+    try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
 
-    lang = request.query.get("lang", settings.LANGUAGE)
-    translations = {
+        lang = request.query.get("lang", user.language or "it")
+        translations = _get_translations()
+        return _json(translations.get(lang, translations["it"]))
+    finally:
+        session.close()
+
+
+async def get_user_settings(request):
+    """Get the authenticated user's settings for the settings page."""
+    session = get_session()
+    try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+
+        from app.users import get_user_settings as _get_settings, get_allowed_models
+        extra = _get_settings(user)
+        models = get_allowed_models(user)
+
+        return _json({
+            "patient_name": user.patient_name,
+            "language": user.language or "it",
+            "ai_model": user.ai_model or "",
+            "carelink_username": user.carelink_username or "",
+            "carelink_country": user.carelink_country or "",
+            "carelink_poll_interval": user.carelink_poll_interval or 300,
+            "has_carelink_password": bool(user.carelink_password),
+            "has_gemini_key": bool(user.gemini_api_key),
+            "has_openweather_key": bool(user.openweather_api_key),
+            "allowed_models": models,
+            "daily_token_limit": user.daily_token_limit or 0,
+            "monthly_token_limit": user.monthly_token_limit or 0,
+            "tokens_used_today": user.tokens_used_today or 0,
+            "tokens_used_month": user.tokens_used_month or 0,
+            "is_admin": user.is_admin,
+            "extra_settings": extra,
+        })
+    finally:
+        session.close()
+
+
+async def post_user_settings(request):
+    """Update the authenticated user's settings."""
+    session = get_session()
+    try:
+        user = _auth_user(request, session)
+        if not user:
+            return _err("unauthorized", 403)
+
+        body = await request.json()
+
+        # Basic profile fields (anyone can edit their own)
+        if "patient_name" in body and body["patient_name"].strip():
+            user.patient_name = body["patient_name"].strip()[:100]
+        if "language" in body and body["language"] in ("it", "en", "es", "fr"):
+            user.language = body["language"]
+        if "ai_model" in body:
+            user.ai_model = body["ai_model"].strip()[:200] or None
+
+        # CareLink credentials
+        if "carelink_username" in body:
+            user.carelink_username = body["carelink_username"].strip()[:200] or None
+        if "carelink_password" in body and body["carelink_password"]:
+            user.carelink_password = body["carelink_password"]
+        if "carelink_country" in body:
+            user.carelink_country = body["carelink_country"].strip()[:5] or None
+        if "carelink_poll_interval" in body:
+            interval = int(body["carelink_poll_interval"])
+            user.carelink_poll_interval = max(60, min(3600, interval))
+
+        # API keys (only set if non-empty — never overwrite with blank)
+        if "gemini_api_key" in body and body["gemini_api_key"]:
+            user.gemini_api_key = body["gemini_api_key"]
+        if "openweather_api_key" in body and body["openweather_api_key"]:
+            user.openweather_api_key = body["openweather_api_key"]
+
+        # Clear keys explicitly
+        if body.get("clear_gemini_key"):
+            user.gemini_api_key = None
+        if body.get("clear_openweather_key"):
+            user.openweather_api_key = None
+
+        # Extra settings JSON
+        if "extra_settings" in body and isinstance(body["extra_settings"], dict):
+            from app.users import update_user_settings
+            update_user_settings(session, user, **body["extra_settings"])
+        else:
+            session.commit()
+
+        return _json({"updated": True})
+    except (ValueError, TypeError) as e:
+        return _err("Invalid settings value", 400)
+    except Exception:
+        log.exception("Error updating settings")
+        return _err("Internal error", 500)
+    finally:
+        session.close()
+
+
+def _get_translations() -> dict:
+    """Return all UI translation dictionaries."""
+    return {
         "it": {
             "home": "Home", "charts": "Grafici", "food": "Cibo", "activity": "Attivita",
             "reports": "Report", "chat": "Chat", "profile": "Profilo",
@@ -587,41 +718,7 @@ async def get_i18n(request):
             "quick_actions": "Azioni rapide", "analyze_food": "Analizza cibo",
             "plan_activity": "Attivita", "report": "Report", "ask": "Chiedi",
             "estimate_bolus": "Stima bolo", "prediction": "Previsione",
-            "glucose": "Glicemia", "hourly_patterns": "Pattern orari (14 giorni)",
-            "no_pattern": "Nessun pattern", "camera_or": "oppure",
-            "choose_gallery": "Scegli dalla galleria",
-            "caption_hint": "Descrizione (opzionale): es. pasta al pesto",
-            "analyze": "Analizza", "analyzing": "Analizzando...", "result": "Risultato",
-            "no_result": "Nessun risultato",
-            "activity_type": "Tipo di attivita", "duration_intensity": "Durata e intensita",
-            "duration": "Durata", "intensity": "Intensita",
-            "light": "Leggera", "moderate": "Moderata", "intense": "Intensa",
-            "position": "Posizione", "tap_start": "Tocca per partenza (GPS)",
-            "tap_end": "Tocca per destinazione (GPS)", "locating": "Localizzazione...",
-            "calculate_plan": "Calcola piano", "activity_plan": "Piano attivita",
-            "route": "Percorso", "estimated_calories": "Calorie stimate",
-            "glucose_impact": "Impatto glicemico", "estimated_delta": "Delta stimato",
-            "estimated_after": "Glicemia stimata dopo",
-            "tir": "Time in Range", "metrics": "Metriche", "slot_analysis": "Analisi fasce orarie",
-            "week": "Settimana", "month": "Mese", "three_months": "3 Mesi",
-            "slot": "Fascia", "mean": "Media", "notes": "Note",
-            "readings": "Letture", "bolus_day": "Boli/giorno", "below_70": "Sotto 70", "above_180": "Sopra 180",
-            "write_message": "Scrivi un messaggio...",
-            "chat_welcome": "Ciao! Sono GliceMia. Chiedimi qualsiasi cosa sulla gestione del diabete.",
-            "patient_profile": "Profilo paziente", "active_conditions": "Condizioni attive",
-            "insulin_settings": "Impostazioni insulina", "no_conditions": "Nessuna condizione attiva",
-            "no_settings": "Nessuna impostazione",
-            "name": "Nome", "type": "Tipo", "pump_label": "Pompa", "sensor": "Sensore",
-            "diet": "Dieta", "language": "Lingua", "time": "Orario", "target": "Target",
-            "min_ago": "min fa", "h_ago": "h fa",
-            "cycling": "Bici", "walking": "Camminata", "running": "Corsa", "gym": "Palestra",
-            "swimming": "Nuoto", "hiking": "Escursione", "yoga": "Yoga", "other": "Altro",
-            "gps_unavailable": "GPS non disponibile", "gps_error": "Errore GPS",
-            "mic_unavailable": "Microfono non disponibile", "voice_msg": "Messaggio vocale",
-            "carbs_prompt": "Grammi di carboidrati:", "error": "Errore", "no_data": "Nessun dato",
-            "bolus_food": "Bolo cibo", "correction": "Correzione", "total": "Totale",
-            "glucose_2h": "Glicemia 2h", "current": "Attuale", "predicted": "Prevista",
-            "range": "Range", "trend": "Trend",
+            "glucose": "Glicemia", "error": "Errore", "no_data": "Nessun dato",
         },
         "en": {
             "home": "Home", "charts": "Charts", "food": "Food", "activity": "Activity",
@@ -630,41 +727,7 @@ async def get_i18n(request):
             "quick_actions": "Quick actions", "analyze_food": "Analyze food",
             "plan_activity": "Activity", "report": "Report", "ask": "Ask",
             "estimate_bolus": "Bolus estimate", "prediction": "Prediction",
-            "glucose": "Glucose", "hourly_patterns": "Hourly patterns (14 days)",
-            "no_pattern": "No patterns", "camera_or": "or",
-            "choose_gallery": "Choose from gallery",
-            "caption_hint": "Description (optional): e.g. pesto pasta",
-            "analyze": "Analyze", "analyzing": "Analyzing...", "result": "Result",
-            "no_result": "No result",
-            "activity_type": "Activity type", "duration_intensity": "Duration & intensity",
-            "duration": "Duration", "intensity": "Intensity",
-            "light": "Light", "moderate": "Moderate", "intense": "Intense",
-            "position": "Location", "tap_start": "Tap for start (GPS)",
-            "tap_end": "Tap for destination (GPS)", "locating": "Locating...",
-            "calculate_plan": "Calculate plan", "activity_plan": "Activity plan",
-            "route": "Route", "estimated_calories": "Estimated calories",
-            "glucose_impact": "Glucose impact", "estimated_delta": "Estimated delta",
-            "estimated_after": "Estimated glucose after",
-            "tir": "Time in Range", "metrics": "Metrics", "slot_analysis": "Time slot analysis",
-            "week": "Week", "month": "Month", "three_months": "3 Months",
-            "slot": "Slot", "mean": "Mean", "notes": "Notes",
-            "readings": "Readings", "bolus_day": "Boluses/day", "below_70": "Below 70", "above_180": "Above 180",
-            "write_message": "Write a message...",
-            "chat_welcome": "Hi! I'm GliceMia. Ask me anything about diabetes management.",
-            "patient_profile": "Patient profile", "active_conditions": "Active conditions",
-            "insulin_settings": "Insulin settings", "no_conditions": "No active conditions",
-            "no_settings": "No settings",
-            "name": "Name", "type": "Type", "pump_label": "Pump", "sensor": "Sensor",
-            "diet": "Diet", "language": "Language", "time": "Time", "target": "Target",
-            "min_ago": "min ago", "h_ago": "h ago",
-            "cycling": "Cycling", "walking": "Walking", "running": "Running", "gym": "Gym",
-            "swimming": "Swimming", "hiking": "Hiking", "yoga": "Yoga", "other": "Other",
-            "gps_unavailable": "GPS unavailable", "gps_error": "GPS error",
-            "mic_unavailable": "Microphone unavailable", "voice_msg": "Voice message",
-            "carbs_prompt": "Grams of carbohydrates:", "error": "Error", "no_data": "No data",
-            "bolus_food": "Food bolus", "correction": "Correction", "total": "Total",
-            "glucose_2h": "Glucose 2h", "current": "Current", "predicted": "Predicted",
-            "range": "Range", "trend": "Trend",
+            "glucose": "Glucose", "error": "Error", "no_data": "No data",
         },
         "es": {
             "home": "Inicio", "charts": "Graficos", "food": "Comida", "activity": "Actividad",
@@ -673,41 +736,7 @@ async def get_i18n(request):
             "quick_actions": "Acciones rapidas", "analyze_food": "Analizar comida",
             "plan_activity": "Actividad", "report": "Informe", "ask": "Preguntar",
             "estimate_bolus": "Estimar bolo", "prediction": "Prediccion",
-            "glucose": "Glucosa", "hourly_patterns": "Patrones horarios (14 dias)",
-            "no_pattern": "Sin patrones", "camera_or": "o",
-            "choose_gallery": "Elegir de galeria",
-            "caption_hint": "Descripcion (opcional): ej. pasta al pesto",
-            "analyze": "Analizar", "analyzing": "Analizando...", "result": "Resultado",
-            "no_result": "Sin resultado",
-            "activity_type": "Tipo de actividad", "duration_intensity": "Duracion e intensidad",
-            "duration": "Duracion", "intensity": "Intensidad",
-            "light": "Ligera", "moderate": "Moderada", "intense": "Intensa",
-            "position": "Ubicacion", "tap_start": "Toca para inicio (GPS)",
-            "tap_end": "Toca para destino (GPS)", "locating": "Localizando...",
-            "calculate_plan": "Calcular plan", "activity_plan": "Plan de actividad",
-            "route": "Ruta", "estimated_calories": "Calorias estimadas",
-            "glucose_impact": "Impacto glucemico", "estimated_delta": "Delta estimado",
-            "estimated_after": "Glucosa estimada despues",
-            "tir": "Tiempo en Rango", "metrics": "Metricas", "slot_analysis": "Analisis por franja horaria",
-            "week": "Semana", "month": "Mes", "three_months": "3 Meses",
-            "slot": "Franja", "mean": "Media", "notes": "Notas",
-            "readings": "Lecturas", "bolus_day": "Bolos/dia", "below_70": "Bajo 70", "above_180": "Sobre 180",
-            "write_message": "Escribe un mensaje...",
-            "chat_welcome": "Hola! Soy GliceMia. Preguntame lo que quieras sobre la gestion de la diabetes.",
-            "patient_profile": "Perfil del paciente", "active_conditions": "Condiciones activas",
-            "insulin_settings": "Ajustes de insulina", "no_conditions": "Sin condiciones activas",
-            "no_settings": "Sin ajustes",
-            "name": "Nombre", "type": "Tipo", "pump_label": "Bomba", "sensor": "Sensor",
-            "diet": "Dieta", "language": "Idioma", "time": "Hora", "target": "Objetivo",
-            "min_ago": "min", "h_ago": "h",
-            "cycling": "Bici", "walking": "Caminar", "running": "Correr", "gym": "Gimnasio",
-            "swimming": "Nadar", "hiking": "Senderismo", "yoga": "Yoga", "other": "Otro",
-            "gps_unavailable": "GPS no disponible", "gps_error": "Error GPS",
-            "mic_unavailable": "Microfono no disponible", "voice_msg": "Mensaje de voz",
-            "carbs_prompt": "Gramos de carbohidratos:", "error": "Error", "no_data": "Sin datos",
-            "bolus_food": "Bolo comida", "correction": "Correccion", "total": "Total",
-            "glucose_2h": "Glucosa 2h", "current": "Actual", "predicted": "Prevista",
-            "range": "Rango", "trend": "Tendencia",
+            "glucose": "Glucosa", "error": "Error", "no_data": "Sin datos",
         },
         "fr": {
             "home": "Accueil", "charts": "Graphiques", "food": "Repas", "activity": "Activite",
@@ -716,44 +745,9 @@ async def get_i18n(request):
             "quick_actions": "Actions rapides", "analyze_food": "Analyser repas",
             "plan_activity": "Activite", "report": "Rapport", "ask": "Demander",
             "estimate_bolus": "Estimer bolus", "prediction": "Prediction",
-            "glucose": "Glycemie", "hourly_patterns": "Patterns horaires (14 jours)",
-            "no_pattern": "Aucun pattern", "camera_or": "ou",
-            "choose_gallery": "Choisir de la galerie",
-            "caption_hint": "Description (optionnel): ex. pates au pesto",
-            "analyze": "Analyser", "analyzing": "Analyse...", "result": "Resultat",
-            "no_result": "Aucun resultat",
-            "activity_type": "Type d'activite", "duration_intensity": "Duree et intensite",
-            "duration": "Duree", "intensity": "Intensite",
-            "light": "Legere", "moderate": "Moderee", "intense": "Intense",
-            "position": "Position", "tap_start": "Appuyez pour depart (GPS)",
-            "tap_end": "Appuyez pour destination (GPS)", "locating": "Localisation...",
-            "calculate_plan": "Calculer le plan", "activity_plan": "Plan d'activite",
-            "route": "Itineraire", "estimated_calories": "Calories estimees",
-            "glucose_impact": "Impact glycemique", "estimated_delta": "Delta estime",
-            "estimated_after": "Glycemie estimee apres",
-            "tir": "Temps dans la cible", "metrics": "Metriques", "slot_analysis": "Analyse par tranche horaire",
-            "week": "Semaine", "month": "Mois", "three_months": "3 Mois",
-            "slot": "Tranche", "mean": "Moyenne", "notes": "Notes",
-            "readings": "Lectures", "bolus_day": "Bolus/jour", "below_70": "Sous 70", "above_180": "Au-dessus 180",
-            "write_message": "Ecrivez un message...",
-            "chat_welcome": "Bonjour! Je suis GliceMia. Posez-moi toute question sur la gestion du diabete.",
-            "patient_profile": "Profil patient", "active_conditions": "Conditions actives",
-            "insulin_settings": "Parametres insuline", "no_conditions": "Aucune condition active",
-            "no_settings": "Aucun parametre",
-            "name": "Nom", "type": "Type", "pump_label": "Pompe", "sensor": "Capteur",
-            "diet": "Regime", "language": "Langue", "time": "Heure", "target": "Cible",
-            "min_ago": "min", "h_ago": "h",
-            "cycling": "Velo", "walking": "Marche", "running": "Course", "gym": "Salle",
-            "swimming": "Natation", "hiking": "Randonnee", "yoga": "Yoga", "other": "Autre",
-            "gps_unavailable": "GPS indisponible", "gps_error": "Erreur GPS",
-            "mic_unavailable": "Micro indisponible", "voice_msg": "Message vocal",
-            "carbs_prompt": "Grammes de glucides:", "error": "Erreur", "no_data": "Pas de donnees",
-            "bolus_food": "Bolus repas", "correction": "Correction", "total": "Total",
-            "glucose_2h": "Glycemie 2h", "current": "Actuelle", "predicted": "Prevue",
-            "range": "Plage", "trend": "Tendance",
+            "glucose": "Glycemie", "error": "Erreur", "no_data": "Pas de donnees",
         },
     }
-    return _json(translations.get(lang, translations["it"]))
 
 
 def setup_routes(app: web.Application):
@@ -775,3 +769,5 @@ def setup_routes(app: web.Application):
     app.router.add_post("/api/predict", post_predict_glucose)
     app.router.add_post("/api/plan-activity", post_plan_activity)
     app.router.add_get("/api/i18n", get_i18n)
+    app.router.add_get("/api/settings", get_user_settings)
+    app.router.add_post("/api/settings", post_user_settings)

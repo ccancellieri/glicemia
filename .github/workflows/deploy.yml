@@ -9,6 +9,7 @@ on:
       - 'scripts/**'
       - 'requirements.txt'
       - '.env.example'
+      - '.github/workflows/deploy.yml'
       - '!website/**'
       - '!docs/**'
       - '!**.md'
@@ -18,46 +19,114 @@ on:
         description: 'Reason for manual deploy'
         required: false
         default: 'manual trigger'
+      fresh_install:
+        description: 'Force fresh install (clone, venv, systemd)'
+        type: boolean
+        default: false
 
 jobs:
   deploy:
     name: Deploy to Oracle Cloud VM
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment: production
 
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
-          # AI backend (environment variables)
+          # AI backend
           AI_MODEL: ${{ vars.AI_MODEL }}
           OLLAMA_API_BASE: ${{ vars.OLLAMA_API_BASE }}
           AI_FALLBACK_MODEL: ${{ vars.AI_FALLBACK_MODEL }}
           AI_FALLBACK_ENABLED: ${{ vars.AI_FALLBACK_ENABLED }}
           AI_TIMEOUT_SECONDS: ${{ vars.AI_TIMEOUT_SECONDS }}
-          # Infra (environment variables)
+          # Infra
           DB_PATH: ${{ vars.DB_PATH }}
           WEBAPP_PORT: ${{ vars.WEBAPP_PORT }}
           WEBAPP_URL: ${{ vars.WEBAPP_URL }}
+          WEBAPP_BIND_HOST: ${{ vars.WEBAPP_BIND_HOST }}
           # Secrets
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_USERS: ${{ secrets.TELEGRAM_ALLOWED_USERS }}
           DB_PASSPHRASE: ${{ secrets.DB_PASSPHRASE }}
           # Deploy target
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          FRESH_INSTALL: ${{ inputs.fresh_install }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          envs: AI_MODEL,OLLAMA_API_BASE,AI_FALLBACK_MODEL,AI_FALLBACK_ENABLED,AI_TIMEOUT_SECONDS,DB_PATH,WEBAPP_PORT,WEBAPP_URL,GEMINI_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USERS,DB_PASSPHRASE,DEPLOY_PATH
+          envs: AI_MODEL,OLLAMA_API_BASE,AI_FALLBACK_MODEL,AI_FALLBACK_ENABLED,AI_TIMEOUT_SECONDS,DB_PATH,WEBAPP_PORT,WEBAPP_URL,WEBAPP_BIND_HOST,GEMINI_API_KEY,OPENWEATHER_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USERS,DB_PASSPHRASE,DEPLOY_PATH,FRESH_INSTALL
           script_stop: true
           script: |
             set -e
+
+            # --- Fresh install: clone repo + create venv + install systemd service ---
+            if [ "$FRESH_INSTALL" = "true" ] || [ ! -d "$DEPLOY_PATH" ]; then
+              echo "=== FRESH INSTALL ==="
+
+              # Install system dependencies
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq python3 python3-pip python3-venv \
+                libsqlcipher-dev ffmpeg git
+
+              # Clone repo
+              if [ ! -d "$DEPLOY_PATH" ]; then
+                echo "--- cloning repo ---"
+                git clone https://github.com/${{ github.repository }}.git "$DEPLOY_PATH"
+              fi
+              cd "$DEPLOY_PATH"
+
+              # Create venv
+              echo "--- creating venv ---"
+              python3 -m venv venv
+              source venv/bin/activate
+              pip install -q --upgrade pip
+              pip install -q -r requirements.txt
+
+              # Install systemd service
+              echo "--- installing systemd service ---"
+              sudo tee /etc/systemd/system/glicemia.service > /dev/null <<'UNIT'
+            [Unit]
+            Description=GliceMia T1D Companion
+            After=network-online.target docker.service
+            Wants=network-online.target
+
+            [Service]
+            Type=simple
+            User=ubuntu
+            WorkingDirectory=/home/ubuntu/glicemia
+            Environment=PATH=/home/ubuntu/glicemia/venv/bin:/usr/bin:/usr/local/bin
+            EnvironmentFile=/home/ubuntu/glicemia/.env
+            ExecStart=/home/ubuntu/glicemia/venv/bin/python agent.py
+            Restart=always
+            RestartSec=10
+            WatchdogSec=300
+            OOMScoreAdjust=-500
+            Nice=-5
+            IOWeight=200
+            MemorySwapMax=infinity
+            NoNewPrivileges=true
+            ProtectSystem=strict
+            ReadWritePaths=/home/ubuntu/glicemia /tmp
+            PrivateTmp=true
+            ProtectHome=read-only
+
+            [Install]
+            WantedBy=multi-user.target
+            UNIT
+              sudo systemctl daemon-reload
+              sudo systemctl enable glicemia
+              echo "=== Fresh install complete ==="
+            fi
+
             cd "$DEPLOY_PATH"
 
+            # --- Write .env ---
             echo "--- write .env ---"
             {
               echo "AI_MODEL=${AI_MODEL}"
@@ -66,31 +135,38 @@ jobs:
               echo "AI_FALLBACK_ENABLED=${AI_FALLBACK_ENABLED}"
               echo "AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS}"
               echo "GEMINI_API_KEY=${GEMINI_API_KEY}"
+              echo "OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}"
               echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}"
               echo "TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}"
               echo "DB_PASSPHRASE=${DB_PASSPHRASE}"
               echo "DB_PATH=${DB_PATH}"
               echo "WEBAPP_PORT=${WEBAPP_PORT}"
               echo "WEBAPP_URL=${WEBAPP_URL}"
+              echo "WEBAPP_BIND_HOST=${WEBAPP_BIND_HOST:-127.0.0.1}"
             } > .env
             chmod 600 .env
 
+            # --- Pull latest code ---
             echo "--- git pull ---"
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
+            # --- Install/update dependencies ---
             echo "--- pip install ---"
             source venv/bin/activate
             pip install -q -r requirements.txt
 
+            # --- Restart service ---
             echo "--- restart service ---"
             sudo systemctl restart glicemia
 
+            # --- Health check ---
             echo "--- health check ---"
             sleep 5
             if sudo systemctl is-active --quiet glicemia; then
               echo "glicemia is running"
             else
               echo "ERROR: glicemia failed to start"
-              sudo journalctl -u glicemia -n 30 --no-pager
+              sudo journalctl -u glicemia -n 50 --no-pager
               exit 1
             fi

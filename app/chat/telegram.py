@@ -16,6 +16,8 @@ from app.chat.platform import ChatPlatform
 from app.config import settings
 from app.bot.handlers import (
     cmd_start, cmd_menu, cmd_status, cmd_help,
+    cmd_setup, cmd_adduser, cmd_setlimit, cmd_usage,
+    cmd_settings, cmd_carelink, cmd_apikey, cmd_model,
     handle_callback, handle_text, handle_photo,
     handle_voice, handle_document, handle_location,
 )
@@ -39,6 +41,16 @@ class TelegramPlatform(ChatPlatform):
         app.add_handler(CommandHandler("status", cmd_status))
         app.add_handler(CommandHandler("help", cmd_help))
         app.add_handler(CommandHandler("aiuto", cmd_help))
+        app.add_handler(CommandHandler("setup", cmd_setup))
+        app.add_handler(CommandHandler("adduser", cmd_adduser))
+        app.add_handler(CommandHandler("setlimit", cmd_setlimit))
+        app.add_handler(CommandHandler("usage", cmd_usage))
+        app.add_handler(CommandHandler("settings", cmd_settings))
+        app.add_handler(CommandHandler("impostazioni", cmd_settings))
+        app.add_handler(CommandHandler("carelink", cmd_carelink))
+        app.add_handler(CommandHandler("apikey", cmd_apikey))
+        app.add_handler(CommandHandler("model", cmd_model))
+        app.add_handler(CommandHandler("modello", cmd_model))
 
         # Inline keyboard callbacks
         app.add_handler(CallbackQueryHandler(handle_callback))

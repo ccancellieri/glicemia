@@ -18,7 +18,10 @@ def _set_pragmas(dbapi_conn, connection_record):
     """Set SQLCipher key and performance pragmas on every raw connection."""
     cursor = dbapi_conn.cursor()
     if settings.DB_PASSPHRASE:
-        cursor.execute(f"PRAGMA key='{settings.DB_PASSPHRASE}'")
+        # Use hex-encoded key to avoid SQL injection via passphrase content.
+        # SQLCipher accepts PRAGMA key="x'hex'" for raw key bytes.
+        hex_key = settings.DB_PASSPHRASE.encode().hex()
+        cursor.execute(f"PRAGMA key=\"x'{hex_key}'\";")
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=normal")
     cursor.execute("PRAGMA temp_store=memory")

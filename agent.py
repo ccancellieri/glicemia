@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """GliceMia — Open-Source T1D Intelligent Companion
 
-Entry point for the GliceMia agent.
+Entry point for the GliceMia agent (multi-patient).
 Copyright (C) 2025-2026 Carlo Cancellieri <ccancellieri@gmail.com>
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
@@ -13,7 +13,7 @@ import sys
 
 from app.config import settings
 from app.database import init_db, get_session
-from app.models import PatientProfile, Condition
+from app.models import UserAccount
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,123 +22,143 @@ logging.basicConfig(
 log = logging.getLogger("glicemia")
 
 
-def _seed_patient_profile():
-    """Create default patient profile if none exists."""
+def _seed_bootstrap_admin():
+    """Create admin UserAccount(s) from TELEGRAM_ALLOWED_USERS env if none exist."""
+    if not settings.TELEGRAM_ALLOWED_USERS:
+        return
+
     session = get_session()
     try:
-        if session.query(PatientProfile).first():
-            return
-
-        session.add(PatientProfile(
-            name=settings.PATIENT_NAME,
-            diabetes_type="T1D",
-            pump_model="MiniMed 780G (MMT-1886)",
-            sensor_model="Guardian 4",
-            diet="vegetarian",
-            language=settings.LANGUAGE,
-        ))
-
-        # Seed known conditions
-        conditions = [
-            Condition(
-                snomed_code="46635009",
-                icd_code="E10",
-                display_name="Diabete tipo 1",
-                clinical_status="active",
-                severity="moderate",
-            ),
-        ]
-        for c in conditions:
-            session.add(c)
-
-        session.commit()
-        log.info("Patient profile seeded for %s", settings.PATIENT_NAME)
+        for uid in settings.TELEGRAM_ALLOWED_USERS:
+            if session.get(UserAccount, uid):
+                continue
+            from app.users import create_user
+            create_user(
+                session, telegram_user_id=uid,
+                patient_name="Admin", language="it", is_admin=True,
+            )
+            log.info("Bootstrap admin seeded: tg_id=%d", uid)
     finally:
         session.close()
 
 
-_telegram_app = None  # Set when Telegram starts, used by alert notifier
+_telegram_app = None
 
 
-async def _check_and_send_alerts(session):
-    """Check for proactive alerts and send them via Telegram."""
+async def _check_and_send_alerts():
+    """Check proactive alerts for ALL active patients and send to each."""
     from app.alerts.engine import check_alerts
     from app.alerts.notifier import format_alert
+    from app.users import get_all_active_users
 
-    alerts = check_alerts(session)
-    if not alerts or not _telegram_app or not settings.TELEGRAM_ALLOWED_USERS:
+    if not _telegram_app:
         return
 
-    for alert in alerts:
-        text = format_alert(alert, settings.PATIENT_NAME, settings.LANGUAGE)
-        for user_id in settings.TELEGRAM_ALLOWED_USERS:
-            try:
-                await _telegram_app.bot.send_message(
-                    chat_id=user_id, text=text, parse_mode="Markdown"
-                )
-                log.info("Alert sent: %s (severity=%s)", alert.alert_type, alert.severity)
-            except Exception as e:
-                log.error("Failed to send alert to %s: %s", user_id, e)
+    session = get_session()
+    try:
+        users = get_all_active_users(session)
+        for user in users:
+            pid = user.telegram_user_id
+            alerts = check_alerts(session, patient_id=pid)
+            if not alerts:
+                continue
+            for alert in alerts:
+                text = format_alert(alert, user.patient_name, user.language or "it")
+                try:
+                    await _telegram_app.bot.send_message(
+                        chat_id=pid, text=text, parse_mode="Markdown"
+                    )
+                    log.info("Alert sent to %d: %s (severity=%s)",
+                             pid, alert.alert_type, alert.severity)
+                except Exception as e:
+                    log.error("Failed to send alert to %d: %s", pid, e)
+    finally:
+        session.close()
 
 
 async def _start_carelink_poller():
-    """Start the CareLink polling loop."""
+    """Start CareLink polling for ALL patients with credentials."""
     from app.carelink.client import CareLinkClient
     from app.carelink.parser import parse_realtime
-
-    client = CareLinkClient()
-    if not client.connect():
-        log.warning("CareLink not available — running without real-time data")
-        return
+    from app.users import get_all_active_users
 
     async def poll_loop():
         while True:
+            session = get_session()
             try:
-                data = client.fetch()
-                if data:
-                    session = get_session()
+                users = get_all_active_users(session)
+                for user in users:
+                    if not user.carelink_username or not user.carelink_password:
+                        continue
                     try:
-                        parse_realtime(data, session)
-                        # Check proactive alerts after every poll
-                        await _check_and_send_alerts(session)
-                    finally:
-                        session.close()
+                        client = CareLinkClient(
+                            username=user.carelink_username,
+                            password=user.carelink_password,
+                            country=user.carelink_country or "it",
+                        )
+                        if not client.connect():
+                            continue
+                        data = client.fetch()
+                        if data:
+                            parse_realtime(data, session, patient_id=user.telegram_user_id)
+                    except Exception as e:
+                        log.error("CareLink poll error for user %d: %s",
+                                  user.telegram_user_id, e)
+
+                # Check alerts after polling all patients
+                await _check_and_send_alerts()
             except Exception as e:
-                log.error("CareLink poll error: %s", e)
-            await asyncio.sleep(settings.CARELINK_POLL_INTERVAL)
+                log.error("CareLink poll loop error: %s", e)
+            finally:
+                session.close()
+
+            # Use the shortest poll interval among active CareLink users, min 60s
+            session2 = get_session()
+            try:
+                users = get_all_active_users(session2)
+                intervals = [
+                    u.carelink_poll_interval for u in users
+                    if u.carelink_username and u.carelink_poll_interval
+                ]
+                interval = min(intervals) if intervals else 300
+                interval = max(interval, 60)
+            finally:
+                session2.close()
+
+            await asyncio.sleep(interval)
 
     asyncio.create_task(poll_loop())
-    log.info("CareLink poller started (interval=%ds)", settings.CARELINK_POLL_INTERVAL)
+    log.info("CareLink multi-patient poller started")
 
 
 async def _start_pattern_scheduler():
     """Compute patterns on startup and schedule daily recomputation."""
     from app.analytics.patterns import compute_all_patterns
+    from app.users import get_all_active_users
 
-    # Compute once on startup
-    session = get_session()
-    try:
-        compute_all_patterns(session)
-    except Exception as e:
-        log.error("Initial pattern computation failed: %s", e)
-    finally:
-        session.close()
+    def compute_for_all():
+        session = get_session()
+        try:
+            users = get_all_active_users(session)
+            for user in users:
+                try:
+                    compute_all_patterns(session, patient_id=user.telegram_user_id)
+                except Exception as e:
+                    log.error("Pattern computation failed for user %d: %s",
+                              user.telegram_user_id, e)
+        finally:
+            session.close()
 
-    # Schedule daily recomputation at 04:00
+    compute_for_all()
+
     async def daily_patterns():
         while True:
-            await asyncio.sleep(3600)  # Check every hour
+            await asyncio.sleep(3600)
             from datetime import datetime
             now = datetime.utcnow()
             if now.hour == 4 and now.minute < 5:
                 log.info("Running daily pattern computation...")
-                session = get_session()
-                try:
-                    compute_all_patterns(session)
-                except Exception as e:
-                    log.error("Daily pattern computation failed: %s", e)
-                finally:
-                    session.close()
+                compute_for_all()
 
     asyncio.create_task(daily_patterns())
     log.info("Pattern scheduler started (daily at 04:00 UTC)")
@@ -149,7 +169,7 @@ async def main():
 
     # 1. Initialize database
     init_db()
-    _seed_patient_profile()
+    _seed_bootstrap_admin()
 
     # 2. Start CareLink poller (non-blocking)
     await _start_carelink_poller()
@@ -179,7 +199,6 @@ async def main():
     from app.chat.telegram import TelegramPlatform
     telegram = TelegramPlatform()
 
-    # Handle graceful shutdown
     stop_event = asyncio.Event()
 
     def handle_signal():
@@ -191,10 +210,9 @@ async def main():
         loop.add_signal_handler(sig, handle_signal)
 
     await telegram.start()
-    _telegram_app = telegram._app  # Expose for alert notifier
+    _telegram_app = telegram._app
     log.info("GliceMia is running! Press Ctrl+C to stop.")
 
-    # Wait for shutdown signal
     await stop_event.wait()
 
     await telegram.stop()

@@ -173,6 +173,38 @@ input[type="range"] { width: 100%; accent-color: var(--btn); }
 }
 .setting-label { font-size: 15px; }
 .setting-value { font-size: 15px; color: var(--hint); }
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 13px; font-weight: 600; color: var(--hint); margin-bottom: 4px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-input, .form-select {
+  width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);
+  background: var(--secondary-bg); color: var(--text); font-size: 15px; outline: none;
+  -webkit-appearance: none;
+}
+.form-input:focus, .form-select:focus { border-color: var(--btn); }
+.form-input::placeholder { color: var(--hint); }
+.form-hint { font-size: 11px; color: var(--hint); margin-top: 3px; }
+.form-row { display: flex; gap: 10px; }
+.form-row .form-group { flex: 1; }
+.btn-save {
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  background: var(--btn); color: var(--btn-text); font-size: 16px;
+  font-weight: 600; cursor: pointer; margin-top: 8px;
+}
+.btn-save:active { opacity: 0.85; }
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-clear {
+  padding: 6px 12px; border: 1px solid rgba(128,128,128,0.3); border-radius: 6px;
+  background: transparent; color: var(--hint); font-size: 12px; cursor: pointer;
+}
+.save-toast {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+  background: var(--btn); color: var(--btn-text); padding: 10px 24px;
+  border-radius: 20px; font-size: 14px; font-weight: 600; z-index: 200;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+.save-toast.show { opacity: 1; }
+.token-bar { height: 6px; border-radius: 3px; background: var(--secondary-bg); margin-top: 4px; overflow: hidden; }
+.token-bar-fill { height: 100%; border-radius: 3px; background: var(--btn); transition: width 0.3s; }
 .condition-badge {
   display: inline-block; padding: 4px 10px; border-radius: 12px;
   background: var(--secondary-bg); font-size: 12px; margin: 2px;
@@ -420,26 +452,101 @@ input[type="range"] { width: 100%; accent-color: var(--btn); }
 
 <!-- ==================== SETTINGS ==================== -->
 <div class="page" id="page-settings">
-  <div class="card">
-    <div class="card-title" data-i18n="patient_profile">Profilo paziente</div>
-    <div id="profile-info">
-      <div class="loading"><div class="spinner"></div></div>
-    </div>
-  </div>
+  <div id="settings-loading"><div class="loading"><div class="spinner"></div></div></div>
+  <div id="settings-form" style="display:none;">
 
-  <div class="card">
-    <div class="card-title" data-i18n="active_conditions">Condizioni attive</div>
-    <div id="conditions-list">
-      <div class="loading"><div class="spinner"></div></div>
+    <!-- Profile -->
+    <div class="card">
+      <div class="card-title">Profilo</div>
+      <div class="form-group">
+        <label class="form-label" for="s-name">Nome</label>
+        <input class="form-input" id="s-name" type="text" maxlength="100" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="s-lang">Lingua</label>
+          <select class="form-select" id="s-lang">
+            <option value="it">Italiano</option><option value="en">English</option>
+            <option value="es">Espanol</option><option value="fr">Francais</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="s-model">Modello AI</label>
+          <input class="form-input" id="s-model" type="text" placeholder="server default" autocomplete="off">
+        </div>
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <div class="card-title" data-i18n="insulin_settings">Impostazioni insulina</div>
-    <div id="insulin-settings">
-      <div class="loading"><div class="spinner"></div></div>
+    <!-- CareLink -->
+    <div class="card">
+      <div class="card-title">CareLink</div>
+      <div class="form-group">
+        <label class="form-label" for="s-cl-user">Username</label>
+        <input class="form-input" id="s-cl-user" type="text" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="s-cl-pass">Password</label>
+        <input class="form-input" id="s-cl-pass" type="password" placeholder="(lascia vuoto per mantenere)" autocomplete="new-password">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="s-cl-country">Paese</label>
+          <input class="form-input" id="s-cl-country" type="text" maxlength="5" placeholder="IT">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="s-cl-poll">Polling (sec)</label>
+          <input class="form-input" id="s-cl-poll" type="number" min="60" max="3600" value="300">
+        </div>
+      </div>
+    </div>
+
+    <!-- API Keys -->
+    <div class="card">
+      <div class="card-title">API Keys</div>
+      <div class="form-group">
+        <label class="form-label" for="s-gemini">Gemini API Key</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-input" id="s-gemini" type="password" placeholder="(chiave server)" autocomplete="off" style="flex:1;">
+          <button class="btn-clear" id="btn-clear-gemini" type="button">Clear</button>
+        </div>
+        <div class="form-hint" id="s-gemini-hint"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="s-ow">OpenWeather API Key</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-input" id="s-ow" type="password" placeholder="(chiave server)" autocomplete="off" style="flex:1;">
+          <button class="btn-clear" id="btn-clear-ow" type="button">Clear</button>
+        </div>
+        <div class="form-hint" id="s-ow-hint"></div>
+      </div>
+    </div>
+
+    <!-- Token Usage -->
+    <div class="card">
+      <div class="card-title">Utilizzo Token</div>
+      <div id="token-usage"></div>
+    </div>
+
+    <!-- Clinical (read-only) -->
+    <div class="card">
+      <div class="card-title" data-i18n="active_conditions">Condizioni attive</div>
+      <div id="conditions-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" data-i18n="insulin_settings">Impostazioni insulina</div>
+      <div id="insulin-settings"></div>
+    </div>
+
+    <button class="btn-save" id="btn-save-settings" type="button">Salva impostazioni</button>
+
+    <div style="text-align:center;margin-top:16px;font-size:13px;color:var(--hint);">
+      Puoi anche modificare le impostazioni via Telegram con <b>/settings</b>
+      <br>
+      <button onclick="if(window.Telegram&&Telegram.WebApp)Telegram.WebApp.close();" style="margin-top:8px;padding:8px 20px;border:1px solid var(--btn);border-radius:8px;background:transparent;color:var(--btn);font-size:14px;cursor:pointer;">Torna a Telegram</button>
     </div>
   </div>
+  <div class="save-toast" id="save-toast">Salvato!</div>
 </div>
 
 <script>
@@ -1112,33 +1219,67 @@ async function quickPredict() {
 }
 
 /* ===== Settings ===== */
+var _settingsData = null;
+var _clearGemini = false, _clearOW = false;
+
 async function loadSettings() {
+  var loading = document.getElementById('settings-loading');
+  var form = document.getElementById('settings-form');
+  loading.style.display = ''; form.style.display = 'none';
+
   try {
     var results = await Promise.all([
-      api('/api/profile'),
+      api('/api/settings'),
       api('/api/conditions'),
       api('/api/insulin'),
     ]);
-    var profile = results[0], conditions = results[1], insulin = results[2];
+    _settingsData = results[0]; var conditions = results[1]; var insulin = results[2];
+    _clearGemini = false; _clearOW = false;
 
-    // Profile
-    var profileEl = document.getElementById('profile-info');
-    clearChildren(profileEl);
-    if (profile) {
-      var fields = [
-        ['Nome', profile.name], ['Tipo', profile.diabetes_type],
-        ['Pompa', profile.pump || '--'], ['Sensore', profile.sensor || '--'],
-        ['Dieta', profile.diet || '--'], ['Lingua', profile.language || '--'],
-      ];
-      fields.forEach(function(f) {
-        var item = createEl('div', { className: 'setting-item' });
-        item.appendChild(createEl('span', { className: 'setting-label', textContent: f[0] }));
-        item.appendChild(createEl('span', { className: 'setting-value', textContent: f[1] }));
-        profileEl.appendChild(item);
-      });
+    // Populate form
+    document.getElementById('s-name').value = _settingsData.patient_name || '';
+    document.getElementById('s-lang').value = _settingsData.language || 'it';
+    document.getElementById('s-model').value = _settingsData.ai_model || '';
+    document.getElementById('s-cl-user').value = _settingsData.carelink_username || '';
+    document.getElementById('s-cl-pass').value = '';
+    document.getElementById('s-cl-country').value = _settingsData.carelink_country || '';
+    document.getElementById('s-cl-poll').value = _settingsData.carelink_poll_interval || 300;
+    document.getElementById('s-gemini').value = '';
+    document.getElementById('s-ow').value = '';
+    document.getElementById('s-gemini-hint').textContent = _settingsData.has_gemini_key ? 'Chiave personale configurata' : 'Usa chiave server';
+    document.getElementById('s-ow-hint').textContent = _settingsData.has_openweather_key ? 'Chiave personale configurata' : 'Usa chiave server';
+
+    // Token usage
+    var tokenEl = document.getElementById('token-usage');
+    clearChildren(tokenEl);
+    var dl = _settingsData.daily_token_limit, ml = _settingsData.monthly_token_limit;
+    var dt = _settingsData.tokens_used_today || 0, mt = _settingsData.tokens_used_month || 0;
+
+    var dayLabel = 'Oggi: ' + dt + ' / ' + (dl || 'illimitato');
+    var monthLabel = 'Mese: ' + mt + ' / ' + (ml || 'illimitato');
+    var dayItem = createEl('div', { style: 'margin-bottom:10px;' });
+    dayItem.appendChild(createEl('div', { textContent: dayLabel, style: 'font-size:14px;' }));
+    if (dl > 0) {
+      var bar1 = createEl('div', { className: 'token-bar' });
+      var fill1 = createEl('div', { className: 'token-bar-fill' });
+      fill1.style.width = Math.min(100, (dt / dl * 100)) + '%';
+      if (dt >= dl) fill1.style.background = 'var(--red)';
+      bar1.appendChild(fill1); dayItem.appendChild(bar1);
     }
+    tokenEl.appendChild(dayItem);
 
-    // Conditions
+    var monthItem = createEl('div');
+    monthItem.appendChild(createEl('div', { textContent: monthLabel, style: 'font-size:14px;' }));
+    if (ml > 0) {
+      var bar2 = createEl('div', { className: 'token-bar' });
+      var fill2 = createEl('div', { className: 'token-bar-fill' });
+      fill2.style.width = Math.min(100, (mt / ml * 100)) + '%';
+      if (mt >= ml) fill2.style.background = 'var(--red)';
+      bar2.appendChild(fill2); monthItem.appendChild(bar2);
+    }
+    tokenEl.appendChild(monthItem);
+
+    // Conditions (read-only)
     var condEl = document.getElementById('conditions-list');
     clearChildren(condEl);
     if (conditions.length) {
@@ -1149,7 +1290,7 @@ async function loadSettings() {
       condEl.appendChild(createEl('span', { style: 'color:var(--hint)', textContent: 'Nessuna condizione attiva' }));
     }
 
-    // Insulin
+    // Insulin (read-only)
     var insEl = document.getElementById('insulin-settings');
     clearChildren(insEl);
     if (insulin.length) {
@@ -1166,8 +1307,65 @@ async function loadSettings() {
     } else {
       insEl.appendChild(createEl('span', { style: 'color:var(--hint)', textContent: 'Nessuna impostazione' }));
     }
-  } catch (e) { console.error('Settings error:', e); }
+
+    loading.style.display = 'none'; form.style.display = '';
+  } catch (e) {
+    console.error('Settings error:', e);
+    loading.style.display = 'none'; form.style.display = '';
+  }
 }
+
+/* Save settings */
+document.getElementById('btn-save-settings').addEventListener('click', async function() {
+  var btn = this;
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  try {
+    var body = {
+      patient_name: document.getElementById('s-name').value.trim(),
+      language: document.getElementById('s-lang').value,
+      ai_model: document.getElementById('s-model').value.trim(),
+      carelink_username: document.getElementById('s-cl-user').value.trim(),
+      carelink_country: document.getElementById('s-cl-country').value.trim().toUpperCase(),
+      carelink_poll_interval: parseInt(document.getElementById('s-cl-poll').value) || 300,
+    };
+    var pass = document.getElementById('s-cl-pass').value;
+    if (pass) body.carelink_password = pass;
+    var gem = document.getElementById('s-gemini').value;
+    if (gem) body.gemini_api_key = gem;
+    var ow = document.getElementById('s-ow').value;
+    if (ow) body.openweather_api_key = ow;
+    if (_clearGemini) body.clear_gemini_key = true;
+    if (_clearOW) body.clear_openweather_key = true;
+
+    await api('/api/settings', { method: 'POST', body: JSON.stringify(body) });
+
+    var toast = document.getElementById('save-toast');
+    toast.classList.add('show');
+    setTimeout(function() { toast.classList.remove('show'); }, 2000);
+
+    // Reload i18n if language changed
+    if (_settingsData && body.language !== _settingsData.language) {
+      loadI18n();
+    }
+    loadSettings();
+  } catch (e) {
+    alert('Error saving: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Salva impostazioni';
+  }
+});
+
+/* Clear key buttons */
+document.getElementById('btn-clear-gemini').addEventListener('click', function() {
+  _clearGemini = true;
+  document.getElementById('s-gemini').value = '';
+  document.getElementById('s-gemini-hint').textContent = 'Verra rimossa al salvataggio';
+});
+document.getElementById('btn-clear-ow').addEventListener('click', function() {
+  _clearOW = true;
+  document.getElementById('s-ow').value = '';
+  document.getElementById('s-ow-hint').textContent = 'Verra rimossa al salvataggio';
+});
 
 /* ===== Auto-refresh ===== */
 setInterval(function() {
@@ -1225,7 +1423,15 @@ function translateUI() {
 }
 
 /* ===== Initial load ===== */
-loadI18n().then(function() { loadDashboard(); });
+loadI18n().then(function() {
+  /* Support deep-linking via hash: #settings, #charts, etc. */
+  var hash = window.location.hash.replace('#', '');
+  if (hash && document.getElementById('page-' + hash)) {
+    switchTab(hash);
+  } else {
+    loadDashboard();
+  }
+});
 </script>
 </body>
 </html>

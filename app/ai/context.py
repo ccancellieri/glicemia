@@ -1,8 +1,7 @@
-"""12-layer context builder — injects real-time data into every AI call."""
+"""12-layer context builder — injects real-time per-patient data into every AI call."""
 
 import logging
 from datetime import datetime, timedelta
-from functools import lru_cache
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -16,63 +15,47 @@ from app.models import (
 log = logging.getLogger(__name__)
 
 
-def build_context(session: Session, now: datetime = None) -> str:
-    """Build the full 12-layer context string for AI system prompt injection."""
+def build_context(session: Session, patient_id: int = None, now: datetime = None) -> str:
+    """Build the full 12-layer context string for AI system prompt injection.
+    All queries are scoped to the given patient_id."""
     now = now or datetime.utcnow()
-    layers = []
-
-    # 1. Current CGM status
-    layers.append(_layer_current_cgm(session, now))
-
-    # 2. Recent 3h readings
-    layers.append(_layer_recent_3h(session, now))
-
-    # 3. Today's metrics
-    layers.append(_layer_today_metrics(session, now))
-
-    # 4. Hourly pattern (same hour, last 14 days)
-    layers.append(_layer_hourly_pattern(session, now))
-
-    # 5. Same weekday pattern (last 8 weeks)
-    layers.append(_layer_weekday_pattern(session, now))
-
-    # 6. Same month last year
-    layers.append(_layer_monthly_pattern(session, now))
-
-    # 7. Recent activities (7 days)
-    layers.append(_layer_recent_activities(session, now))
-
-    # 8. Active conditions
-    layers.append(_layer_conditions(session))
-
-    # 9. Current insulin settings
-    layers.append(_layer_insulin_settings(session, now))
-
-    # 10. Patient profile
-    layers.append(_layer_patient_profile(session))
-
-    # 11. Recent meals (24h)
-    layers.append(_layer_recent_meals(session, now))
-
-    # 12. Health data (24h)
-    layers.append(_layer_health_data(session, now))
-
+    pid = patient_id
+    layers = [
+        _layer_current_cgm(session, now, pid),
+        _layer_recent_3h(session, now, pid),
+        _layer_today_metrics(session, now, pid),
+        _layer_hourly_pattern(session, now, pid),
+        _layer_weekday_pattern(session, now, pid),
+        _layer_monthly_pattern(session, now, pid),
+        _layer_recent_activities(session, now, pid),
+        _layer_conditions(session, pid),
+        _layer_insulin_settings(session, now, pid),
+        _layer_patient_profile(session, pid),
+        _layer_recent_meals(session, now, pid),
+        _layer_health_data(session, now, pid),
+    ]
     return "\n\n".join(layer for layer in layers if layer)
 
 
-def _layer_current_cgm(session: Session, now: datetime) -> str:
-    reading = (
-        session.query(GlucoseReading)
-        .filter(GlucoseReading.timestamp >= now - timedelta(minutes=15))
-        .order_by(GlucoseReading.timestamp.desc())
-        .first()
+def _pid_filter(query, model, pid):
+    """Apply patient_id filter if pid is not None."""
+    if pid is not None:
+        return query.filter(model.patient_id == pid)
+    return query
+
+
+def _layer_current_cgm(session: Session, now: datetime, pid) -> str:
+    q = session.query(GlucoseReading).filter(
+        GlucoseReading.timestamp >= now - timedelta(minutes=15)
     )
-    pump = (
-        session.query(PumpStatus)
-        .filter(PumpStatus.timestamp >= now - timedelta(minutes=15))
-        .order_by(PumpStatus.timestamp.desc())
-        .first()
+    q = _pid_filter(q, GlucoseReading, pid)
+    reading = q.order_by(GlucoseReading.timestamp.desc()).first()
+
+    pq = session.query(PumpStatus).filter(
+        PumpStatus.timestamp >= now - timedelta(minutes=15)
     )
+    pq = _pid_filter(pq, PumpStatus, pid)
+    pump = pq.order_by(PumpStatus.timestamp.desc()).first()
 
     if not reading:
         return "CURRENT STATUS: No recent CGM data available."
@@ -95,34 +78,31 @@ def _layer_current_cgm(session: Session, now: datetime) -> str:
     return ", ".join(parts)
 
 
-def _layer_recent_3h(session: Session, now: datetime) -> str:
-    readings = (
-        session.query(GlucoseReading)
-        .filter(GlucoseReading.timestamp >= now - timedelta(hours=3))
-        .order_by(GlucoseReading.timestamp.asc())
-        .all()
+def _layer_recent_3h(session: Session, now: datetime, pid) -> str:
+    q = session.query(GlucoseReading).filter(
+        GlucoseReading.timestamp >= now - timedelta(hours=3)
     )
+    q = _pid_filter(q, GlucoseReading, pid)
+    readings = q.order_by(GlucoseReading.timestamp.asc()).all()
     if not readings:
         return ""
 
     points = []
-    for r in readings[-36:]:  # Max 36 points (every 5 min for 3h)
+    for r in readings[-36:]:
         time_str = r.timestamp.strftime("%H:%M")
         points.append(f"{time_str}={r.sg:.0f}")
 
     return f"LAST 3H: {', '.join(points)}"
 
 
-def _layer_today_metrics(session: Session, now: datetime) -> str:
+def _layer_today_metrics(session: Session, now: datetime, pid) -> str:
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    readings = (
-        session.query(GlucoseReading.sg)
-        .filter(
-            GlucoseReading.timestamp >= today_start,
-            GlucoseReading.sg.isnot(None),
-        )
-        .all()
+    q = session.query(GlucoseReading.sg).filter(
+        GlucoseReading.timestamp >= today_start,
+        GlucoseReading.sg.isnot(None),
     )
+    q = _pid_filter(q, GlucoseReading, pid)
+    readings = q.all()
     if not readings:
         return ""
 
@@ -133,17 +113,17 @@ def _layer_today_metrics(session: Session, now: datetime) -> str:
     below = 100 * sum(1 for v in values if v < 70) / n
     above = 100 * sum(1 for v in values if v > 180) / n
 
-    boluses = (
-        session.query(func.sum(BolusEvent.volume_units))
-        .filter(BolusEvent.timestamp >= today_start)
-        .scalar()
-    ) or 0
+    bq = session.query(func.sum(BolusEvent.volume_units)).filter(
+        BolusEvent.timestamp >= today_start
+    )
+    bq = _pid_filter(bq, BolusEvent, pid)
+    boluses = bq.scalar() or 0
 
-    carbs = (
-        session.query(func.sum(Meal.carbs_g))
-        .filter(Meal.timestamp >= today_start)
-        .scalar()
-    ) or 0
+    mq = session.query(func.sum(Meal.carbs_g)).filter(
+        Meal.timestamp >= today_start
+    )
+    mq = _pid_filter(mq, Meal, pid)
+    carbs = mq.scalar() or 0
 
     return (
         f"TODAY: mean={mean:.0f} mg/dL, TIR={tir:.0f}%, "
@@ -153,46 +133,40 @@ def _layer_today_metrics(session: Session, now: datetime) -> str:
     )
 
 
-def _layer_hourly_pattern(session: Session, now: datetime) -> str:
+def _layer_hourly_pattern(session: Session, now: datetime, pid) -> str:
     hour_key = now.strftime("%H:00")
-    pattern = (
-        session.query(GlucosePattern)
-        .filter_by(period_type="hourly", period_key=hour_key)
-        .first()
-    )
+    q = session.query(GlucosePattern).filter_by(period_type="hourly", period_key=hour_key)
+    q = _pid_filter(q, GlucosePattern, pid)
+    pattern = q.first()
     if not pattern:
         return ""
 
     return (
-        f"PATTERN THIS HOUR (14d): avg={pattern.avg_sg:.0f}±{pattern.std_sg:.0f}, "
+        f"PATTERN THIS HOUR (14d): avg={pattern.avg_sg:.0f}\u00b1{pattern.std_sg:.0f}, "
         f"TIR={pattern.tir_pct:.0f}%, hypos={pattern.hypo_count}, "
         f"samples={pattern.sample_count}"
     )
 
 
-def _layer_weekday_pattern(session: Session, now: datetime) -> str:
+def _layer_weekday_pattern(session: Session, now: datetime, pid) -> str:
     day_name = now.strftime("%A").lower()
-    pattern = (
-        session.query(GlucosePattern)
-        .filter_by(period_type="daily", period_key=day_name)
-        .first()
-    )
+    q = session.query(GlucosePattern).filter_by(period_type="daily", period_key=day_name)
+    q = _pid_filter(q, GlucosePattern, pid)
+    pattern = q.first()
     if not pattern:
         return ""
 
     return (
-        f"PATTERN {day_name.upper()} (8w): avg={pattern.avg_sg:.0f}±{pattern.std_sg:.0f}, "
+        f"PATTERN {day_name.upper()} (8w): avg={pattern.avg_sg:.0f}\u00b1{pattern.std_sg:.0f}, "
         f"TIR={pattern.tir_pct:.0f}%, hypos={pattern.hypo_count}"
     )
 
 
-def _layer_monthly_pattern(session: Session, now: datetime) -> str:
+def _layer_monthly_pattern(session: Session, now: datetime, pid) -> str:
     month_key = now.strftime("%B").lower()
-    pattern = (
-        session.query(GlucosePattern)
-        .filter_by(period_type="monthly", period_key=month_key)
-        .first()
-    )
+    q = session.query(GlucosePattern).filter_by(period_type="monthly", period_key=month_key)
+    q = _pid_filter(q, GlucosePattern, pid)
+    pattern = q.first()
     if not pattern:
         return ""
 
@@ -202,14 +176,12 @@ def _layer_monthly_pattern(session: Session, now: datetime) -> str:
     )
 
 
-def _layer_recent_activities(session: Session, now: datetime) -> str:
-    activities = (
-        session.query(Activity)
-        .filter(Activity.timestamp_start >= now - timedelta(days=7))
-        .order_by(Activity.timestamp_start.desc())
-        .limit(10)
-        .all()
+def _layer_recent_activities(session: Session, now: datetime, pid) -> str:
+    q = session.query(Activity).filter(
+        Activity.timestamp_start >= now - timedelta(days=7)
     )
+    q = _pid_filter(q, Activity, pid)
+    activities = q.order_by(Activity.timestamp_start.desc()).limit(10).all()
     if not activities:
         return ""
 
@@ -227,12 +199,12 @@ def _layer_recent_activities(session: Session, now: datetime) -> str:
     return "\n".join(lines)
 
 
-def _layer_conditions(session: Session) -> str:
-    conditions = (
-        session.query(Condition)
-        .filter(Condition.clinical_status.in_(["active", "recurrence"]))
-        .all()
+def _layer_conditions(session: Session, pid) -> str:
+    q = session.query(Condition).filter(
+        Condition.clinical_status.in_(["active", "recurrence"])
     )
+    q = _pid_filter(q, Condition, pid)
+    conditions = q.all()
     if not conditions:
         return ""
 
@@ -246,14 +218,11 @@ def _layer_conditions(session: Session) -> str:
     return f"ACTIVE CONDITIONS: {', '.join(items)}"
 
 
-def _layer_insulin_settings(session: Session, now: datetime) -> str:
+def _layer_insulin_settings(session: Session, now: datetime, pid) -> str:
     hour = now.strftime("%H:00")
-    setting = (
-        session.query(InsulinSetting)
-        .filter(InsulinSetting.time_start <= hour)
-        .order_by(InsulinSetting.time_start.desc())
-        .first()
-    )
+    q = session.query(InsulinSetting).filter(InsulinSetting.time_start <= hour)
+    q = _pid_filter(q, InsulinSetting, pid)
+    setting = q.order_by(InsulinSetting.time_start.desc()).first()
     if not setting:
         return ""
 
@@ -268,8 +237,11 @@ def _layer_insulin_settings(session: Session, now: datetime) -> str:
     return ", ".join(parts)
 
 
-def _layer_patient_profile(session: Session) -> str:
-    profile = session.query(PatientProfile).first()
+def _layer_patient_profile(session: Session, pid) -> str:
+    q = session.query(PatientProfile)
+    if pid is not None:
+        q = q.filter_by(patient_id=pid)
+    profile = q.first()
     if not profile:
         return ""
 
@@ -286,14 +258,10 @@ def _layer_patient_profile(session: Session) -> str:
     return ", ".join(parts)
 
 
-def _layer_recent_meals(session: Session, now: datetime) -> str:
-    meals = (
-        session.query(Meal)
-        .filter(Meal.timestamp >= now - timedelta(hours=24))
-        .order_by(Meal.timestamp.desc())
-        .limit(5)
-        .all()
-    )
+def _layer_recent_meals(session: Session, now: datetime, pid) -> str:
+    q = session.query(Meal).filter(Meal.timestamp >= now - timedelta(hours=24))
+    q = _pid_filter(q, Meal, pid)
+    meals = q.order_by(Meal.timestamp.desc()).limit(5).all()
     if not meals:
         return ""
 
@@ -304,19 +272,17 @@ def _layer_recent_meals(session: Session, now: datetime) -> str:
             parts.append(f"{m.carbs_g:.0f}g CHO")
         if m.description:
             parts.append(m.description[:60])
-        lines.append(" — ".join(parts))
+        lines.append(" \u2014 ".join(parts))
 
     return "\n".join(lines)
 
 
-def _layer_health_data(session: Session, now: datetime) -> str:
-    records = (
-        session.query(HealthRecord)
-        .filter(HealthRecord.timestamp >= now - timedelta(hours=24))
-        .order_by(HealthRecord.timestamp.desc())
-        .limit(10)
-        .all()
+def _layer_health_data(session: Session, now: datetime, pid) -> str:
+    q = session.query(HealthRecord).filter(
+        HealthRecord.timestamp >= now - timedelta(hours=24)
     )
+    q = _pid_filter(q, HealthRecord, pid)
+    records = q.order_by(HealthRecord.timestamp.desc()).limit(10).all()
     if not records:
         return ""
 

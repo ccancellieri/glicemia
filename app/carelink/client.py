@@ -12,21 +12,27 @@ log = logging.getLogger(__name__)
 class CareLinkClient:
     """Wraps carelink-python-client to poll CareLink Cloud every 5 minutes."""
 
-    def __init__(self):
+    def __init__(self, username: str = "", password: str = "", country: str = "it"):
         self._client = None
         self._last_data = None
+        self._username = username
+        self._password = password
+        self._country = country
 
     def connect(self) -> bool:
         """Initialize the CareLink connection."""
+        if not self._username or not self._password:
+            log.warning("CareLink credentials not provided")
+            return False
         try:
             from carelink_client import CareLinkClient as CLC
 
             self._client = CLC(
-                carelink_username=settings.CARELINK_USERNAME,
-                carelink_password=settings.CARELINK_PASSWORD,
-                carelink_country=settings.CARELINK_COUNTRY,
+                carelink_username=self._username,
+                carelink_password=self._password,
+                carelink_country=self._country,
             )
-            log.info("CareLink client initialized for country=%s", settings.CARELINK_COUNTRY)
+            log.info("CareLink client initialized for country=%s", self._country)
             return True
         except ImportError:
             log.warning(

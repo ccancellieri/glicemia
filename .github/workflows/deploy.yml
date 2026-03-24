@@ -1,0 +1,63 @@
+name: Deploy GliceMia
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Bot / server code — trigger deploy
+      - 'agent.py'
+      - 'app/**'
+      - 'scripts/**'
+      - 'requirements.txt'
+      - '.env.example'
+      # Ignore static site, docs, and markdown
+      - '!website/**'
+      - '!docs/**'
+      - '!**.md'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deploy'
+        required: false
+        default: 'manual trigger'
+
+jobs:
+  deploy:
+    name: Deploy to Oracle Cloud VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script_stop: true
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+
+            echo "--- git pull ---"
+            git pull origin main
+
+            echo "--- pip install ---"
+            source venv/bin/activate
+            pip install -q -r requirements.txt
+
+            echo "--- restart service ---"
+            sudo systemctl restart glicemia
+
+            echo "--- health check ---"
+            sleep 5
+            if sudo systemctl is-active --quiet glicemia; then
+              echo "glicemia is running"
+            else
+              echo "ERROR: glicemia failed to start"
+              sudo journalctl -u glicemia -n 30 --no-pager
+              exit 1
+            fi
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}

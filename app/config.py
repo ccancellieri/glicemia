@@ -9,8 +9,11 @@ load_dotenv()
 
 
 class Settings:
-    # AI
+    # AI — primary model + fallback
     AI_MODEL: str = os.getenv("AI_MODEL", "gemini/gemini-2.5-flash")
+    AI_FALLBACK_MODEL: str = os.getenv("AI_FALLBACK_MODEL", "")
+    AI_TIMEOUT_SECONDS: int = int(os.getenv("AI_TIMEOUT_SECONDS", "60"))
+    AI_FALLBACK_ENABLED: bool = os.getenv("AI_FALLBACK_ENABLED", "false").lower() == "true"
 
     # Telegram
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")

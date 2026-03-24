@@ -8,7 +8,7 @@ litellm>=1.40.0
 python-telegram-bot>=21.0
 
 # CareLink Cloud API (Medtronic 780G)
-carelink-python-client>=0.1.0
+# carelink-python-client  # Not on PyPI — install from source if needed
 
 # Database (encrypted SQLite)
 sqlalchemy>=2.0
@@ -29,9 +29,9 @@ edge-tts>=6.1.0
 # Environment
 python-dotenv>=1.0
 
-# Health connectors
-fhirclient>=4.0
-apple-health-parser>=0.1.0
+# Health connectors (optional)
+# fhirclient>=4.0              # uncomment when needed
+# apple-health-parser>=0.1.0   # uncomment when needed
 
 # Maps & weather
 # openrouteservice>=2.3  # uncomment when needed

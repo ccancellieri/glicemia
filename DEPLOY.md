@@ -10,7 +10,7 @@ Deploy GliceMia on Oracle Cloud's Always Free tier: 4 ARM cores, 24 GB RAM, 200 
 
 1. Vai su https://cloud.oracle.com e clicca **"Sign Up"**
 2. Compila con i tuoi dati reali (servono per la verifica)
-3. Seleziona **Home Region: Italy South (Milan)** — i dati di Nuria resteranno in Italia
+3. Seleziona **Home Region: Italy South (Milan)** — i dati medici resteranno in Italia (GDPR)
 4. Inserisci una carta di credito (richiesta per verifica, **non verrà addebitato nulla**)
 5. Conferma l'email e accedi alla console
 
@@ -118,7 +118,7 @@ WEBAPP_URL=https://tuo-dominio.duckdns.org/webapp
 
 # Lingua
 LANGUAGE=it
-PATIENT_NAME=Nuria
+PATIENT_NAME=YourName
 ```
 
 ### 7. Importa i dati CareLink

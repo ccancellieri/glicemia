@@ -1,8 +1,11 @@
 """LiteLLM wrapper — pluggable AI backend with per-user model selection,
-API key overrides, and token usage tracking.
+API key overrides, token usage tracking, and smart medical routing.
 
-Supports configurable timeout and automatic fallback to a secondary model
-when the primary is slow or unavailable (e.g., local Ollama -> remote Gemini).
+Supports:
+- Multi-provider fallback chain (Ollama -> Groq -> OpenRouter -> Gemini)
+- Medical query routing: diabetes/health queries → local Diabetica-7B (sovereign)
+- General queries → cloud GPU APIs (Groq free tier, OpenRouter free models)
+- GDPR consent gating for external AI providers
 """
 
 import asyncio
@@ -16,6 +19,53 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 litellm.suppress_debug_info = True
+
+# Parse medical keywords once at import
+_MEDICAL_KEYWORDS: set[str] = set()
+if settings.AI_MEDICAL_KEYWORDS:
+    _MEDICAL_KEYWORDS = {
+        kw.strip().lower()
+        for kw in settings.AI_MEDICAL_KEYWORDS.split(",")
+        if kw.strip()
+    }
+
+
+def _is_medical_query(messages: list[dict]) -> bool:
+    """Check if the latest user message contains medical/diabetes keywords."""
+    if not _MEDICAL_KEYWORDS:
+        return False
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            text = msg.get("content", "")
+            if isinstance(text, list):
+                text = " ".join(
+                    part.get("text", "") for part in text
+                    if isinstance(part, dict) and part.get("type") == "text"
+                )
+            text_lower = text.lower()
+            return any(kw in text_lower for kw in _MEDICAL_KEYWORDS)
+    return False
+
+
+def _is_local_model(model: str) -> bool:
+    """Check if a model runs locally (Ollama) — no GDPR consent needed."""
+    return "ollama" in model
+
+
+def _resolve_api_key(model: str, user=None) -> Optional[str]:
+    """Resolve the API key for a model: user-specific > server-wide."""
+    if user:
+        from app.users import get_user_api_key_for_model
+        key = get_user_api_key_for_model(user, model)
+        if key:
+            return key
+    if "gemini" in model:
+        return settings.GEMINI_API_KEY or None
+    if "groq" in model:
+        return settings.GROQ_API_KEY or None
+    if "openrouter" in model:
+        return settings.OPENROUTER_API_KEY or None
+    return None
 
 
 async def _call_model(
@@ -49,6 +99,36 @@ async def _call_model(
     return content, total_tokens
 
 
+def _build_fallback_chain(primary_model: str) -> list[str]:
+    """Build ordered fallback chain from configured providers.
+
+    Returns a list of models to try in order after the primary fails.
+    Skips the primary model and any unconfigured providers.
+    """
+    candidates = []
+
+    # Add configured fallback model if set
+    if settings.AI_FALLBACK_MODEL:
+        candidates.append(settings.AI_FALLBACK_MODEL)
+
+    # Add cloud providers if API keys are configured
+    if settings.GROQ_API_KEY:
+        candidates.append("groq/llama-3.3-70b-versatile")
+    if settings.OPENROUTER_API_KEY:
+        candidates.append("openrouter/deepseek/deepseek-chat-v3-0324:free")
+    if settings.GEMINI_API_KEY:
+        candidates.append("gemini/gemini-2.5-flash")
+
+    # Deduplicate while preserving order, skip the primary
+    seen = {primary_model}
+    chain = []
+    for m in candidates:
+        if m not in seen:
+            seen.add(m)
+            chain.append(m)
+    return chain
+
+
 async def chat(
     messages: list[dict],
     model: Optional[str] = None,
@@ -57,6 +137,10 @@ async def chat(
     user=None,
 ) -> str:
     """Send messages to AI and return the response text.
+
+    Smart routing:
+    - Medical/diabetes queries → AI_MEDICAL_MODEL (local Diabetica-7B, sovereign)
+    - General queries → AI_MODEL with multi-provider fallback chain
 
     If a UserAccount is provided via `user`, uses per-user model preference,
     API key overrides, and tracks token usage against limits.
@@ -71,10 +155,13 @@ async def chat(
     Returns:
         Response text string.
     """
-    # Resolve model: explicit param > user preference > server default
+    # Resolve model: explicit param > user preference > medical routing > server default
     if not model:
         if user and user.ai_model:
             model = user.ai_model
+        elif settings.AI_MEDICAL_MODEL and _is_medical_query(messages):
+            model = settings.AI_MEDICAL_MODEL
+            log.info("Medical query detected — routing to %s", model)
         else:
             model = settings.AI_MODEL
 
@@ -87,16 +174,9 @@ async def chat(
         if not allowed:
             return f"[Token limit reached ({reason}). Please wait for reset or contact admin.]"
 
-    # Resolve API key: user-specific > server-wide
-    api_key = None
-    if user:
-        from app.users import get_user_api_key_for_model
-        api_key = get_user_api_key_for_model(user, model)
-    if not api_key and "gemini" in model:
-        api_key = settings.GEMINI_API_KEY or None
-
-    use_fallback = settings.AI_FALLBACK_ENABLED and settings.AI_FALLBACK_MODEL
-    timeout = float(settings.AI_TIMEOUT_SECONDS) if use_fallback else None
+    api_key = _resolve_api_key(model, user)
+    fallback_chain = _build_fallback_chain(model)
+    timeout = float(settings.AI_TIMEOUT_SECONDS) if fallback_chain else None
 
     try:
         content, tokens = await _call_model(
@@ -104,44 +184,52 @@ async def chat(
         )
         log.debug("AI response (%s): %d chars, %d tokens", model, len(content), tokens)
 
-        # Track token usage
         if user and tokens > 0:
             _track_tokens(user, tokens)
 
         return content
     except Exception as e:
-        if not use_fallback:
+        if not fallback_chain:
             log.error("AI call failed (model=%s): %s", model, e, exc_info=True)
             return "[AI temporarily unavailable. Please try again.]"
 
-        fallback = settings.AI_FALLBACK_MODEL
         reason = "timeout" if isinstance(e, asyncio.TimeoutError) else str(e)
-        log.warning(
-            "AI primary (%s) failed (%s) — falling back to %s",
-            model, reason, fallback,
-        )
+        log.warning("AI primary (%s) failed (%s) — trying fallback chain", model, reason)
 
-        # Resolve fallback API key
-        fallback_key = None
-        if user:
-            from app.users import get_user_api_key_for_model
-            fallback_key = get_user_api_key_for_model(user, fallback)
-        if not fallback_key and "gemini" in fallback:
-            fallback_key = settings.GEMINI_API_KEY or None
+        # Try each fallback in order
+        for fallback in fallback_chain:
+            # GDPR: check consent before sending data to external AI
+            if user and not _is_local_model(fallback):
+                from app.privacy import has_consent
+                from app.database import get_session as _get_session
+                _s = _get_session()
+                try:
+                    if not has_consent(_s, user.telegram_user_id, "ai_external"):
+                        log.info(
+                            "External fallback %s blocked — no GDPR consent (user %d)",
+                            fallback, user.telegram_user_id,
+                        )
+                        continue
+                finally:
+                    _s.close()
 
-        try:
-            content, tokens = await _call_model(
-                fallback, messages, temperature, max_tokens, api_key=fallback_key
-            )
-            log.info("Fallback AI response (%s): %d chars, %d tokens", fallback, len(content), tokens)
+            fallback_key = _resolve_api_key(fallback, user)
+            try:
+                content, tokens = await _call_model(
+                    fallback, messages, temperature, max_tokens, api_key=fallback_key
+                )
+                log.info("Fallback AI response (%s): %d chars, %d tokens", fallback, len(content), tokens)
 
-            if user and tokens > 0:
-                _track_tokens(user, tokens)
+                if user and tokens > 0:
+                    _track_tokens(user, tokens)
 
-            return content
-        except Exception as e2:
-            log.error("Fallback AI also failed (%s): %s", fallback, e2, exc_info=True)
-            return "[AI temporarily unavailable. Please try again later.]"
+                return content
+            except Exception as e2:
+                log.warning("Fallback %s failed: %s", fallback, e2)
+                continue
+
+        log.error("All AI providers exhausted after primary (%s) + %d fallbacks", model, len(fallback_chain))
+        return "[AI temporarily unavailable. Please try again later.]"
 
 
 async def chat_with_vision(

@@ -160,6 +160,39 @@ async def _start_pattern_scheduler():
                 log.info("Running daily pattern computation...")
                 compute_for_all()
 
+                # Memory consolidation — merge redundant, prune low-value
+                try:
+                    from app.memory import consolidate_memories
+                    s = get_session()
+                    try:
+                        users = get_all_active_users(s)
+                        for u in users:
+                            try:
+                                stats = await consolidate_memories(s, u.telegram_user_id)
+                                if stats.get("pruned") or stats.get("consolidated"):
+                                    log.info("Memory consolidation user %d: %s",
+                                             u.telegram_user_id, stats)
+                            except Exception as e:
+                                log.error("Memory consolidation failed for user %d: %s",
+                                          u.telegram_user_id, e)
+                    finally:
+                        s.close()
+                except Exception as e:
+                    log.error("Memory consolidation failed: %s", e)
+
+                # GDPR data retention cleanup
+                try:
+                    from app.privacy import apply_retention_policies
+                    s = get_session()
+                    try:
+                        cleaned = apply_retention_policies(s)
+                        if cleaned:
+                            log.info("GDPR retention cleanup: %s", cleaned)
+                    finally:
+                        s.close()
+                except Exception as e:
+                    log.error("Retention cleanup failed: %s", e)
+
     asyncio.create_task(daily_patterns())
     log.info("Pattern scheduler started (daily at 04:00 UTC)")
 

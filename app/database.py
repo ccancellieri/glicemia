@@ -1,4 +1,8 @@
-"""GliceMia database — SQLCipher encrypted SQLite with WAL mode."""
+"""GliceMia database — SQLCipher encrypted SQLite with WAL mode.
+
+Uses sqlcipher3 DBAPI when available (encrypted at rest).
+Falls back to standard sqlite3 (unencrypted) for local development.
+"""
 
 import logging
 
@@ -12,14 +16,26 @@ log = logging.getLogger(__name__)
 
 _engine = None
 _SessionLocal = None
+_use_sqlcipher = False
+
+# Try to import sqlcipher3 as the DBAPI module
+try:
+    import sqlcipher3.dbapi2 as _sqlcipher_dbapi
+    _use_sqlcipher = True
+except ImportError:
+    _sqlcipher_dbapi = None
+
+
+def _sqlcipher_creator():
+    """Create a raw sqlcipher3 connection to the DB file."""
+    return _sqlcipher_dbapi.connect(str(settings.DB_PATH))
 
 
 def _set_pragmas(dbapi_conn, connection_record):
     """Set SQLCipher key and performance pragmas on every raw connection."""
     cursor = dbapi_conn.cursor()
-    if settings.DB_PASSPHRASE:
-        # Use hex-encoded key to avoid SQL injection via passphrase content.
-        # SQLCipher accepts PRAGMA key="x'hex'" for raw key bytes.
+    if _use_sqlcipher and settings.DB_PASSPHRASE:
+        # SQLCipher: set encryption key before any other operation.
         hex_key = settings.DB_PASSPHRASE.encode().hex()
         cursor.execute(f"PRAGMA key=\"x'{hex_key}'\";")
     cursor.execute("PRAGMA journal_mode=WAL")
@@ -34,10 +50,15 @@ def _set_pragmas(dbapi_conn, connection_record):
 def get_engine():
     global _engine
     if _engine is None:
-        db_url = f"sqlite:///{settings.DB_PATH}"
-        _engine = create_engine(db_url, echo=False)
+        if _use_sqlcipher:
+            # Use sqlcipher3 DBAPI with a custom creator
+            _engine = create_engine("sqlite://", creator=_sqlcipher_creator, echo=False)
+            log.info("Database engine created (SQLCipher): %s", settings.DB_PATH)
+        else:
+            db_url = f"sqlite:///{settings.DB_PATH}"
+            _engine = create_engine(db_url, echo=False)
+            log.info("Database engine created (standard SQLite): %s", settings.DB_PATH)
         event.listen(_engine, "connect", _set_pragmas)
-        log.info("Database engine created: %s", settings.DB_PATH)
     return _engine
 
 

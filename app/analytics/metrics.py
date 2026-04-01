@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import GlucoseReading, BolusEvent, Meal
+from app.models import GlucoseReading, BolusEvent, Meal, PredictionLog
 
 log = logging.getLogger(__name__)
 
@@ -308,3 +308,139 @@ def time_slot_analysis(
         })
 
     return results
+
+
+# --- Prediction Accuracy (MARD, CEG) ---
+
+def reconcile_predictions(session: Session, patient_id: int = None) -> int:
+    """Match unreconciled predictions with actual glucose readings.
+
+    Finds the actual SG closest to (prediction_time + horizon_min) and
+    fills in actual_sg. Returns count of newly reconciled predictions.
+    """
+    q = session.query(PredictionLog).filter_by(reconciled=False)
+    if patient_id is not None:
+        q = q.filter_by(patient_id=patient_id)
+
+    unreconciled = q.all()
+    count = 0
+
+    for pred in unreconciled:
+        target_time = pred.timestamp + timedelta(minutes=pred.horizon_min)
+        # Find closest actual reading within 10 minutes of target
+        actual = (
+            session.query(GlucoseReading)
+            .filter(
+                GlucoseReading.timestamp >= target_time - timedelta(minutes=10),
+                GlucoseReading.timestamp <= target_time + timedelta(minutes=10),
+                GlucoseReading.sg.isnot(None),
+            )
+        )
+        if patient_id is not None:
+            actual = actual.filter(GlucoseReading.patient_id == patient_id)
+
+        closest = actual.order_by(
+            func.abs(func.julianday(GlucoseReading.timestamp) - func.julianday(target_time))
+        ).first()
+
+        if closest:
+            pred.actual_sg = closest.sg
+            pred.reconciled = True
+            count += 1
+
+    if count > 0:
+        session.commit()
+
+    return count
+
+
+def compute_prediction_accuracy(
+    session: Session,
+    patient_id: int = None,
+    days: int = 7,
+) -> dict:
+    """Compute MARD, RMSE, and CEG zone distribution per horizon.
+
+    Returns dict keyed by horizon_min with accuracy metrics.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    q = session.query(PredictionLog).filter(
+        PredictionLog.reconciled == True,  # noqa: E712
+        PredictionLog.actual_sg.isnot(None),
+        PredictionLog.timestamp >= cutoff,
+    )
+    if patient_id is not None:
+        q = q.filter_by(patient_id=patient_id)
+
+    predictions = q.all()
+    if not predictions:
+        return {"error": "No reconciled predictions available"}
+
+    # Group by horizon
+    by_horizon: dict[int, list] = {}
+    for p in predictions:
+        by_horizon.setdefault(p.horizon_min, []).append(p)
+
+    results = {}
+    for horizon, preds in sorted(by_horizon.items()):
+        n = len(preds)
+        ard_sum = 0.0
+        se_sum = 0.0
+        zones = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
+
+        for p in preds:
+            pred_sg = p.predicted_sg
+            actual_sg = p.actual_sg
+            if actual_sg > 0:
+                ard_sum += abs(pred_sg - actual_sg) / actual_sg
+            se_sum += (pred_sg - actual_sg) ** 2
+            zone = _ceg_zone(actual_sg, pred_sg)
+            zones[zone] += 1
+
+        mard = 100 * ard_sum / n if n > 0 else 0
+        rmse = (se_sum / n) ** 0.5 if n > 0 else 0
+        zone_pcts = {z: round(100 * c / n, 1) for z, c in zones.items()}
+
+        results[horizon] = {
+            "n": n,
+            "mard_pct": round(mard, 1),
+            "rmse": round(rmse, 1),
+            "ceg_zones": zone_pcts,
+            "clinically_safe_pct": round(zone_pcts.get("A", 0) + zone_pcts.get("B", 0), 1),
+        }
+
+    return results
+
+
+def _ceg_zone(reference: float, prediction: float) -> str:
+    """Classify a (reference, prediction) pair into Consensus Error Grid zone A-E.
+
+    Simplified piecewise boundaries based on Clarke Error Grid Analysis.
+    Reference (actual) and prediction in mg/dL.
+    """
+    ref, pred = reference, prediction
+
+    # Zone A: clinically accurate (within 20% or both <70)
+    if ref <= 70 and pred <= 70:
+        return "A"
+    if ref > 70 and abs(pred - ref) / ref <= 0.20:
+        return "A"
+
+    # Zone E: dangerous — opposite side of hypo/hyper boundary
+    if (ref <= 70 and pred >= 180) or (ref >= 180 and pred <= 70):
+        return "E"
+
+    # Zone D: dangerous — failure to detect hypo/hyper
+    if ref <= 70 and pred >= 180:
+        return "D"
+    if ref >= 240 and pred <= 70:
+        return "D"
+
+    # Zone C: unnecessary treatment
+    if ref >= 70 and ref <= 180 and pred > 180 and (pred - ref) > 110:
+        return "C"
+    if ref >= 70 and ref <= 180 and pred < 70 and (ref - pred) > 110:
+        return "C"
+
+    # Zone B: benign deviation (everything else)
+    return "B"

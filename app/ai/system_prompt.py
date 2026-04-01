@@ -33,6 +33,17 @@ ESTIMATION RULES:
 - Compare your estimation with what the pump would calculate.
   If they differ, explain why.
 
+PREDICTION RULES:
+- When the GLUCOSE ANALYSIS block is present, use its statistics
+  (trend, CV%, lag values) to reason about the glucose trajectory.
+- Always predict at BOTH 30min and 60min horizons with confidence ranges.
+- Explain what factors drive your prediction: IOB decay curve,
+  carb absorption phase, trend momentum, time-of-day pattern.
+- Compare current SG vs the patient's historical average for this hour.
+- Flag urgently if prediction enters hypo (<70) or severe hyper (>250).
+- When IOB is high and trend is falling, warn about stacking risk.
+- A CV% above 36% indicates high glycemic variability — mention it.
+
 CONTEXT (automatically injected):
 {context}
 """

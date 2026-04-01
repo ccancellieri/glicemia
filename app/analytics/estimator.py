@@ -5,6 +5,7 @@ Always returns final predicted glucose values, not just deltas.
 """
 
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -21,6 +22,15 @@ log = logging.getLogger(__name__)
 DIA_HOURS = 4.0
 # Peak insulin action at ~75 min for rapid-acting
 PEAK_MIN = 75
+
+# Literature-calibrated uncertainty (mg/dL) from Gluco-LLM RMSE data (Li et al. 2025)
+BASE_UNCERTAINTY = {15: 12, 30: 20, 60: 30, 90: 38, 120: 45}
+
+# Dalla Man 2007 oral glucose model parameters
+_CARB_KA = 0.05   # absorption rate constant (1/min)
+_CARB_KE = 0.03   # elimination rate constant (1/min)
+# Carb-to-glucose sensitivity (mg/dL per gram, average T1D)
+_CARB_SENSITIVITY = 3.5
 
 
 def get_current_state(session: Session) -> Optional[dict]:
@@ -79,6 +89,8 @@ def predict_glucose(
     minutes_ahead: int = 60,
     carbs_g: float = 0,
     bolus_u: float = 0,
+    log_prediction: bool = False,
+    patient_id: int = None,
 ) -> dict:
     """Predict glucose at a future time point.
 
@@ -102,16 +114,16 @@ def predict_glucose(
     isf = settings["isf"]
     ic_ratio = settings["ic_ratio"]
 
-    # 1. Trend-based prediction
+    # 1. Trend-based prediction with exponential decay
     trend_rates = {
         "UP": 2.0, "UP_FAST": 3.0, "UP_RAPID": 4.0,
         "DOWN": -1.5, "DOWN_FAST": -2.5, "DOWN_RAPID": -3.5,
         "FLAT": 0.0,
     }
     trend_rate = trend_rates.get(state["trend"], 0.0)
-    # Trend decays over time (assume trend holds for ~30 min then fades)
-    effective_trend_min = min(minutes_ahead, 30)
-    trend_delta = trend_rate * effective_trend_min
+    # Exponential trend decay: tau=20 for fast trends, 40 for slow
+    tau = 20 if abs(trend_rate) > 2.0 else 40
+    trend_delta = trend_rate * tau * (1 - math.exp(-minutes_ahead / tau))
 
     # 2. IOB effect (remaining insulin will lower glucose)
     # Simplified: IOB acts over remaining DIA with exponential decay
@@ -124,13 +136,10 @@ def predict_glucose(
         bolus_active = _iob_active_fraction(0, minutes_ahead)
         bolus_delta = -(bolus_u * bolus_active * isf)
 
-    # 4. Carb effect
+    # 4. Carb effect (Dalla Man 2007 dual-exponential model)
     carb_delta = 0
     if carbs_g > 0:
-        # Carbs raise glucose: ~3-4 mg/dL per gram without insulin
-        # With absorption curve peaking at ~30-45 min
-        carb_absorption = min(1.0, minutes_ahead / 60.0)  # simplified
-        carb_delta = carbs_g * 3.5 * carb_absorption
+        carb_delta = _carb_absorption(minutes_ahead, carbs_g) * _CARB_SENSITIVITY
 
     # 5. Historical pattern adjustment
     pattern_adj = _pattern_adjustment(session, state["timestamp"], minutes_ahead)
@@ -139,10 +148,26 @@ def predict_glucose(
     predicted = sg + trend_delta + iob_delta + bolus_delta + carb_delta + pattern_adj
     predicted = max(40, predicted)  # Floor at 40
 
-    # Uncertainty range (wider for further predictions)
-    uncertainty = 10 + (minutes_ahead / 10)
+    # Literature-calibrated uncertainty scaled by current glycemic variability
+    cv_3h = _recent_cv(session, state["timestamp"])
+    uncertainty = _calibrated_uncertainty(minutes_ahead, cv_3h)
     range_low = max(40, predicted - uncertainty)
     range_high = predicted + uncertainty
+
+    # Optionally log prediction for accuracy tracking
+    if log_prediction and patient_id is not None:
+        try:
+            from app.models import PredictionLog
+            session.add(PredictionLog(
+                patient_id=patient_id,
+                timestamp=state["timestamp"],
+                horizon_min=minutes_ahead,
+                predicted_sg=round(predicted),
+                method="estimator",
+            ))
+            session.commit()
+        except Exception as e:
+            log.debug("Failed to log prediction: %s", e)
 
     return {
         "current_sg": round(sg),
@@ -293,6 +318,84 @@ def estimate_activity_impact(
         "carbs_recommended_g": round(carbs_needed),
         "historical_data_used": historical_avg is not None,
     }
+
+
+def predict_trajectory(
+    session: Session,
+    carbs_g: float = 0,
+    bolus_u: float = 0,
+    horizons: tuple = (15, 30, 60, 90, 120),
+) -> list[dict]:
+    """Predict glucose at multiple future horizons with confidence intervals.
+
+    Returns a list of prediction dicts, one per horizon.
+    """
+    results = []
+    for minutes in horizons:
+        pred = predict_glucose(session, minutes_ahead=minutes, carbs_g=carbs_g, bolus_u=bolus_u)
+        results.append(pred)
+    return results
+
+
+def _carb_absorption(minutes: float, carbs_g: float) -> float:
+    """Dalla Man 2007 dual-exponential oral glucose absorption model.
+
+    Returns the cumulative fraction of carbs absorbed at `minutes`.
+    """
+    if minutes <= 0:
+        return 0.0
+    ka, ke = _CARB_KA, _CARB_KE
+    t = minutes  # already in minutes (rates adjusted accordingly)
+    # Cumulative absorption fraction (integrated rate)
+    if abs(ka - ke) < 1e-6:
+        # Degenerate case: ka == ke
+        frac = 1.0 - (1.0 + ka * t) * math.exp(-ka * t)
+    else:
+        frac = 1.0 - (ka * math.exp(-ke * t) - ke * math.exp(-ka * t)) / (ka - ke)
+    return max(0.0, min(1.0, frac))
+
+
+def _recent_cv(session: Session, now: datetime) -> float:
+    """Compute coefficient of variation (%) of glucose over last 3 hours."""
+    cutoff = now - timedelta(hours=3)
+    readings = (
+        session.query(GlucoseReading.sg)
+        .filter(GlucoseReading.timestamp >= cutoff, GlucoseReading.sg.isnot(None))
+        .all()
+    )
+    if len(readings) < 3:
+        return 15.0  # default moderate CV
+    values = [r.sg for r in readings]
+    mean = sum(values) / len(values)
+    if mean <= 0:
+        return 15.0
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    return math.sqrt(variance) / mean * 100
+
+
+def _calibrated_uncertainty(minutes_ahead: int, cv_3h: float) -> float:
+    """Literature-calibrated confidence interval scaled by glycemic variability.
+
+    Base values from Gluco-LLM RMSE data (Li et al. 2025).
+    Scaled by current CV relative to an average CV of 15%.
+    """
+    # Interpolate from BASE_UNCERTAINTY
+    horizons = sorted(BASE_UNCERTAINTY.keys())
+    if minutes_ahead <= horizons[0]:
+        base = BASE_UNCERTAINTY[horizons[0]]
+    elif minutes_ahead >= horizons[-1]:
+        base = BASE_UNCERTAINTY[horizons[-1]]
+    else:
+        for i in range(len(horizons) - 1):
+            if horizons[i] <= minutes_ahead <= horizons[i + 1]:
+                t = (minutes_ahead - horizons[i]) / (horizons[i + 1] - horizons[i])
+                base = BASE_UNCERTAINTY[horizons[i]] * (1 - t) + BASE_UNCERTAINTY[horizons[i + 1]] * t
+                break
+        else:
+            base = 30.0
+
+    volatility_factor = max(0.7, min(1.5, cv_3h / 15.0))
+    return base * volatility_factor
 
 
 def _iob_remaining_fraction(start_min: int, end_min: int) -> float:

@@ -15,9 +15,10 @@ from telegram.ext import (
 from app.chat.platform import ChatPlatform
 from app.config import settings
 from app.bot.handlers import (
-    cmd_start, cmd_menu, cmd_status, cmd_help,
+    cmd_start, cmd_menu, cmd_status, cmd_help, cmd_privacy,
     cmd_setup, cmd_adduser, cmd_setlimit, cmd_usage,
     cmd_settings, cmd_carelink, cmd_apikey, cmd_model,
+    cmd_memory, cmd_forget, cmd_whatif, cmd_accuracy, cmd_sg,
     handle_callback, handle_text, handle_photo,
     handle_voice, handle_document, handle_location,
 )
@@ -51,6 +52,17 @@ class TelegramPlatform(ChatPlatform):
         app.add_handler(CommandHandler("apikey", cmd_apikey))
         app.add_handler(CommandHandler("model", cmd_model))
         app.add_handler(CommandHandler("modello", cmd_model))
+        app.add_handler(CommandHandler("privacy", cmd_privacy))
+        app.add_handler(CommandHandler("memory", cmd_memory))
+        app.add_handler(CommandHandler("memoria", cmd_memory))
+        app.add_handler(CommandHandler("forget", cmd_forget))
+        app.add_handler(CommandHandler("dimentica", cmd_forget))
+        app.add_handler(CommandHandler("whatif", cmd_whatif))
+        app.add_handler(CommandHandler("sesi", cmd_whatif))
+        app.add_handler(CommandHandler("accuracy", cmd_accuracy))
+        app.add_handler(CommandHandler("precisione", cmd_accuracy))
+        app.add_handler(CommandHandler("sg", cmd_sg))
+        app.add_handler(CommandHandler("glicemia", cmd_sg))
 
         # Inline keyboard callbacks
         app.add_handler(CallbackQueryHandler(handle_callback))

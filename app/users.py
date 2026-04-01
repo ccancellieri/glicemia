@@ -103,6 +103,10 @@ def get_user_api_key_for_model(user: UserAccount, model: str) -> str | None:
     # Fallback: check dedicated key fields
     if "gemini" in model and user.gemini_api_key:
         return user.gemini_api_key
+    if "groq" in model and user.groq_api_key:
+        return user.groq_api_key
+    if "openrouter" in model and user.openrouter_api_key:
+        return user.openrouter_api_key
     return None
 
 

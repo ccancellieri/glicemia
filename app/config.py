@@ -28,8 +28,21 @@ class Settings:
 
     # Server-wide API keys (per-user keys in DB take precedence when set)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     OPENWEATHER_API_KEY: str = os.getenv("OPENWEATHER_API_KEY", "")
     ORS_API_KEY: str = os.getenv("ORS_API_KEY", "")
+
+    # Medical model routing — local sovereign model for diabetes queries
+    AI_MEDICAL_MODEL: str = os.getenv("AI_MEDICAL_MODEL", "")
+    AI_MEDICAL_KEYWORDS: str = os.getenv(
+        "AI_MEDICAL_KEYWORDS",
+        "glicemia,glycemia,glucose,insulin,insulina,diabete,diabetes,bolus,basale,basal,"
+        "ipoglicemia,hypoglycemia,iperglicemia,hyperglycemia,hba1c,emoglobina,carboidrati,"
+        "carbohydrates,carbs,glucometro,microinfusore,pump,cgm,sensore,lancette,chetoni,"
+        "ketones,glicata,dose,dosaggio,dosing,ipo,iper,zucchero,sugar,blood sugar,"
+        "meal,pasto,correzione,correction,rapporto,ratio,sensitivity,sensibilità",
+    )
 
     # Database
     DB_PASSPHRASE: str = os.getenv("DB_PASSPHRASE", "")

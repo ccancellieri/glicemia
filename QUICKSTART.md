@@ -1,152 +1,238 @@
-# GliceMia — Quick Start
+# GliceMia — Quick Start (Local Testing)
 
-## 1. Install Dependencies
+## Prerequisites
+
+- **macOS** with Homebrew (or Linux with equivalent packages)
+- **Python 3.11+**
+- **Ollama** installed and running (`ollama serve`)
+- A **Telegram account**
+
+## Step 1: Install System Dependencies
 
 ```bash
-cd /Users/ccancellieri/work/code/diabete
-source venv/bin/activate
-pip install python-dotenv sqlalchemy "python-telegram-bot>=21.0" litellm matplotlib
+# macOS
+brew install sqlcipher
+
+# Ollama (if not installed)
+# Download from https://ollama.ai
 ```
 
-## 2. Create `.env`
+## Step 2: Set Up Python Environment
+
+```bash
+cd /path/to/diabete
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+If `sqlcipher3` fails, install it separately:
+```bash
+LDFLAGS="-L$(brew --prefix sqlcipher)/lib" \
+CPPFLAGS="-I$(brew --prefix sqlcipher)/include" \
+pip install sqlcipher3
+```
+
+## Step 3: Pull AI Models into Ollama
+
+```bash
+# General-purpose model (14B, good for chat)
+ollama pull qwen2.5:14b-instruct-q4_K_M
+
+# Medical model (Diabetica-7B, specialized for diabetes)
+# If you have the GGUF file + Modelfile in models/:
+cd models && ollama create diabetica:7b -f Modelfile && cd ..
+
+# Verify
+ollama list
+```
+
+## Step 4: Create a Telegram Bot
+
+1. Open Telegram, search for **@BotFather**
+2. Send `/newbot`, choose a name (e.g. `GliceMia`) and username (e.g. `glicemia_test_bot`)
+3. Copy the **token** (looks like `1234567890:AAH...`)
+
+## Step 5: Find Your Telegram User ID
+
+1. Search for **@userinfobot** on Telegram
+2. Send any message — it replies with your numeric ID (e.g. `987654321`)
+
+## Step 6: Configure `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set **at minimum**:
+Edit `.env` with your values:
 
 ```env
-# Required for Telegram bot
-TELEGRAM_BOT_TOKEN=your_token_from_@BotFather
+# === AI Backend (local Ollama) ===
+AI_MODEL=ollama/qwen2.5:14b-instruct-q4_K_M
+OLLAMA_API_BASE=http://localhost:11434
 
-# Required for AI responses (pick one)
-GEMINI_API_KEY=your_gemini_key          # Free at https://ai.google.dev
-# or
-ANTHROPIC_API_KEY=your_anthropic_key    # Claude API
+# Medical queries route to specialized Diabetica-7B (sovereign)
+AI_MEDICAL_MODEL=ollama/diabetica:7b
 
-# Optional: restrict bot access to specific Telegram user IDs
-TELEGRAM_ALLOWED_USERS=123456789
+# Fallback chain (optional — enable if you have API keys)
+AI_FALLBACK_ENABLED=true
+AI_TIMEOUT_SECONDS=60
+# AI_FALLBACK_MODEL=gemini/gemini-2.5-flash
 
-# Patient name (default: Nuria)
-PATIENT_NAME=Nuria
-LANGUAGE=it
+# === Telegram Bot ===
+TELEGRAM_BOT_TOKEN=your_token_from_botfather
+TELEGRAM_ALLOWED_USERS=your_telegram_id
+
+# === Database ===
+DB_PASSPHRASE=test_passphrase_change_in_production
+DB_PATH=glicemia.db
+
+# === Optional API Keys ===
+# GEMINI_API_KEY=       # Free at https://ai.google.dev (enables cloud fallback)
+# GROQ_API_KEY=         # Free at https://console.groq.com (GPU-fast inference)
+# OPENROUTER_API_KEY=   # Free at https://openrouter.ai/keys (29 free models)
 ```
 
-### How to get your Telegram user ID
+## Step 7: Start the Bot
 
-1. Message `@userinfobot` on Telegram
-2. It replies with your numeric user ID
+```bash
+source .venv/bin/activate
+python agent.py
+```
 
-### How to create a Telegram bot
+You should see:
+```
+Starting GliceMia...
+Database tables initialized
+Bootstrap admin seeded: tg_id=YOUR_ID
+CareLink multi-patient poller started
+Pattern scheduler started (daily at 04:00 UTC)
+Telegram bot started and polling
+GliceMia is running! Press Ctrl+C to stop.
+```
 
-1. Message `@BotFather` on Telegram
-2. Send `/newbot`, follow prompts
-3. Copy the token into `.env`
+## Step 8: Test in Telegram
 
-## 3. Seed Data
+### First-time Setup
 
-Import CareLink CSV files from `private/data/`:
+1. Open your bot in Telegram
+2. Send `/start` — Accept the **liability waiver**
+3. Accept **GDPR consent** if prompted (needed for AI processing)
 
+### Basic Chat (General AI)
+
+Send a text message:
+```
+Ciao! Come funzioni?
+```
+This routes to your local Ollama model (qwen2.5:14b).
+
+### Medical Query (Diabetica-7B Routing)
+
+Send a diabetes-related message:
+```
+La mia glicemia e' 250 dopo pranzo, ho preso 4 unita' 2 ore fa. Cosa dovrei fare?
+```
+Watch the terminal — you'll see:
+```
+Medical query detected — routing to ollama/diabetica:7b
+```
+
+### Per-User Configuration
+
+| Command | What it does |
+|---------|-------------|
+| `/settings` | View all your settings (name, language, AI model, CareLink, API keys) |
+| `/carelink <email> <password> <country>` | Set your CareLink credentials (stored encrypted, message auto-deleted) |
+| `/apikey gemini AIza...` | Set your personal Gemini API key |
+| `/apikey groq gsk_...` | Set your personal Groq API key |
+| `/apikey openrouter sk-or-...` | Set your personal OpenRouter API key |
+| `/model ollama/qwen2.5:14b` | Choose your preferred AI model |
+
+### Memory System
+
+The bot **learns from your conversations** automatically. After chatting:
+
+| Command | What it does |
+|---------|-------------|
+| `/memory` | See what the bot has learned about you |
+| `/memory decision` | Filter by type: `decision`, `action`, `preference`, `health_insight`, `learned_fact` |
+| `/forget 42` | Delete memory #42 |
+| `/forget all` | Delete all memories |
+
+### Import CareLink Data
+
+**Option A**: Send a CareLink CSV file directly in Telegram chat — the bot imports it automatically.
+
+**Option B**: If you have CSV files in `private/data/`:
 ```bash
 python scripts/seed_demo.py
 ```
 
-This will:
-- Create the database (`glicemia.db`)
-- Import glucose readings + bolus events from CSV files
-- Seed patient profile + conditions
-- Compute glucose patterns (hourly, daily, monthly)
+### All Commands
 
-## 4. Test Everything
+| Command | Alias (IT) | Description |
+|---------|-----------|-------------|
+| `/start` | | Welcome + waiver |
+| `/menu` | | Main menu with buttons |
+| `/status` | `/stato` | Current glucose, IOB, pump status |
+| `/help` | `/aiuto` | Help guide |
+| `/settings` | `/impostazioni` | User settings |
+| `/carelink` | | Set CareLink credentials |
+| `/apikey` | | Set per-user API keys |
+| `/model` | `/modello` | Choose AI model |
+| `/usage` | | Token usage counters |
+| `/memory` | `/memoria` | View learned memories |
+| `/forget` | `/dimentica` | Delete memories |
+| `/privacy` | | GDPR consent management |
 
-```bash
-python scripts/test_demo.py
-```
+### What You Can Do
 
-Verifies all 10 components work: database, metrics, patterns, context, AI prompt, reports, estimator, alerts, i18n, AI call.
+- **Send text** — AI responds with full glucose context (13 layers)
+- **Send a food photo** — Carb estimate + bolus suggestion
+- **Send a voice message** — Transcribed + AI response
+- **Share GPS location** — Plan activity with route + glucose prediction
+- **Send a CareLink CSV** — Import historical data
+- **Send a lab PDF** — AI analyzes lab results
 
-## 5. Start the Bot
-
-```bash
-python agent.py
-```
-
-Then open Telegram and message your bot:
-- `/start` — Accept waiver, see main menu
-- `/stato` — Current glucose status
-- `/menu` — Full button menu
-- Send a food photo — Get carb estimate + bolus suggestion
-- Send text — Chat with GliceMia about diabetes management
-
-## Bot Commands
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome + waiver |
-| `/menu` | Main menu with buttons |
-| `/stato` / `/status` | Current glucose + pump status |
-| `/help` / `/aiuto` | Help message |
-
-## Button Menu
-
-From `/menu`:
-- **Stato attuale** — Live glucose, IOB, trend, predictions
-- **Report** — Today / Week / Month with chart
-- **Pianifica attivita** — GPS route planning with glucose prediction
-- **Importa dati** — CareLink CSV, Apple Health ZIP, lab results PDF
-- **Impostazioni** — Language, AI model
-- **Aiuto** — Help
-
-## Architecture
+## Architecture (for Developers)
 
 ```
-agent.py                    Entry point
-app/
-  config.py                 .env loader
-  models.py                 14 SQLAlchemy tables (FHIR-based)
-  database.py               SQLite with WAL mode
-  ai/                       LiteLLM + system prompt + 12-layer context
-  alerts/                   11 proactive alert types
-  analytics/                Metrics (TIR/GMI/CV), patterns, estimator
-  activity/                 Route planner, calories, weather, GPS tracker
-  bot/                      Handlers, menus, food photo, voice
-  carelink/                 CareLink client + CSV import
-  chat/                     Telegram platform
-  health/                   Apple Health, FHIR, lab analyzer, conditions
-  i18n/                     IT/EN/ES/FR messages
-  mcp/                      Claude Desktop MCP server (11 tools)
-  reports/                  Text + chart report generator
-scripts/
-  seed_demo.py              Import CSV data + compute patterns
-  test_demo.py              Test all components
+User sends message
+    |
+    v
+handle_text() --> build_context() [13 layers including memories]
+    |                  |
+    v                  v
+ai_chat()        build_system_prompt()
+    |
+    +-- Medical keywords? --> ollama/diabetica:7b (sovereign)
+    |
+    +-- General query ----> ollama/qwen2.5:14b (or user's model)
+    |
+    +-- Fallback chain ---> Groq -> OpenRouter -> Gemini
+    |
+    v
+Save ChatMessage + extract_memories() [background]
+    |
+    v
+Daily consolidation at 04:00 UTC (merge/prune memories)
 ```
 
-## Data in Database
+## Troubleshooting
 
-After seeding:
-- **64,002 glucose readings** (Feb 2025 - Mar 2026)
-- **1,233 bolus events**
-- **41 pattern records** (24 hourly + daily + monthly)
-- **Patient profile** with T1D condition (SNOMED: 46635009)
+| Problem | Solution |
+|---------|----------|
+| Bot doesn't respond | Check `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USERS` in `.env` |
+| "Not registered" | Your Telegram ID must be in `TELEGRAM_ALLOWED_USERS` |
+| AI timeout | Check Ollama is running: `ollama list` |
+| Medical routing not working | Verify `AI_MEDICAL_MODEL=ollama/diabetica:7b` and model exists |
+| `sqlcipher3` install fails | Run with brew flags: `LDFLAGS=... CPPFLAGS=... pip install sqlcipher3` |
+| Memory extraction fails | Non-critical; bot works fine, memories just won't accumulate |
+| No CareLink data | Use `/carelink` command or import CSV files |
 
-## Without Telegram (Testing AI Only)
+## Next Steps
 
-```python
-import asyncio
-from app.database import init_db, get_session
-from app.ai.llm import chat
-from app.ai.system_prompt import build_system_prompt
-from app.ai.context import build_context
-
-init_db()
-s = get_session()
-ctx = build_context(s)
-prompt = build_system_prompt("Nuria", "it", ctx)
-
-response = asyncio.run(chat([
-    {"role": "system", "content": prompt},
-    {"role": "user", "content": "Come sto oggi?"},
-]))
-print(response)
-```
+- **Add CareLink credentials**: `/carelink your_email your_password IT` in Telegram
+- **Get a free Gemini key**: https://ai.google.dev — enables cloud fallback
+- **Deploy to server**: See [DEPLOY.md](DEPLOY.md) for Contabo/cloud deployment

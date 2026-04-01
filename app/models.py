@@ -40,6 +40,8 @@ class UserAccount(Base):
 
     # Per-user API keys (field-level encrypted, fallback to server-wide keys)
     gemini_api_key = Column(EncryptedText)
+    groq_api_key = Column(EncryptedText)
+    openrouter_api_key = Column(EncryptedText)
     openweather_api_key = Column(EncryptedText)
 
     # AI model preference (optional override — fallback to server default)
@@ -80,6 +82,7 @@ class UserAccount(Base):
     health_records = relationship("HealthRecord", back_populates="user")
     trip_plans = relationship("TripPlan", back_populates="user")
     chat_messages = relationship("ChatMessage", back_populates="user")
+    memories = relationship("UserMemory", back_populates="user", foreign_keys="UserMemory.patient_id")
 
 
 # --- Patient Profile ---
@@ -356,6 +359,61 @@ class LiabilityWaiver(Base):
     version = Column(Text, default="1.0")
 
 
+class GDPRConsent(Base):
+    """GDPR Article 9 explicit consent for health data processing.
+
+    Tracks consent per purpose with audit trail.  Consent can be
+    withdrawn at any time — withdrawal does not affect lawfulness
+    of processing done before withdrawal (Art. 7(3)).
+    """
+    __tablename__ = "gdpr_consents"
+
+    id = Column(Integer, primary_key=True)
+    telegram_user_id = Column(Integer, ForeignKey("user_accounts.telegram_user_id"), nullable=False, index=True)
+    purpose = Column(Text, nullable=False)       # health_data, ai_processing, ai_external, analytics
+    granted = Column(Boolean, nullable=False)
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    privacy_policy_version = Column(Text, default="1.0")
+    language = Column(String(5))
+
+    __table_args__ = (
+        Index("ix_gdpr_consent_user_purpose", "telegram_user_id", "purpose"),
+    )
+
+
+# --- Per-User Memory (AI-powered learning) ---
+
+class UserMemory(Base):
+    """Structured per-user memory — extracted from conversations by the AI.
+
+    Types:
+    - decision: Therapeutic decisions (e.g. "changed I:C ratio to 1:8 at lunch")
+    - action: Actions taken (e.g. "imported 3 months of CareLink data")
+    - preference: User preferences (e.g. "prefers mg/dL, doesn't like voice replies")
+    - health_insight: Learned health patterns (e.g. "tends to go low after cycling")
+    - learned_fact: Facts about the user (e.g. "works night shifts on Tuesdays")
+    """
+    __tablename__ = "user_memories"
+
+    id = Column(Integer, primary_key=True)
+    patient_id = Column(Integer, ForeignKey("user_accounts.telegram_user_id"), nullable=False, index=True)
+    memory_type = Column(String(20), nullable=False, index=True)  # decision, action, preference, health_insight, learned_fact
+    content = Column(Text, nullable=False)       # The memory itself (natural language)
+    importance = Column(Integer, default=5)       # 1-10 importance score (AI-assigned)
+    source_summary = Column(Text)                 # Brief context of the conversation that produced this
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_accessed = Column(DateTime, default=datetime.utcnow)  # Updated when injected into context
+    access_count = Column(Integer, default=0)     # How many times used in context
+    is_active = Column(Boolean, default=True)     # False = consolidated/archived
+    consolidated_into = Column(Integer, ForeignKey("user_memories.id"))  # Points to the consolidated memory
+
+    user = relationship("UserAccount", back_populates="memories")
+
+    __table_args__ = (
+        Index("ix_memory_patient_type_active", "patient_id", "memory_type", "is_active"),
+    )
+
+
 # --- Conversation History ---
 
 class ChatMessage(Base):
@@ -371,3 +429,21 @@ class ChatMessage(Base):
     metadata_json = Column(Text)  # file IDs, message type, etc.
 
     user = relationship("UserAccount", back_populates="chat_messages")
+
+
+# --- Prediction Accuracy Tracking ---
+
+class PredictionLog(Base):
+    """Stores glucose predictions for retrospective accuracy analysis (MARD, CEG zones)."""
+    __tablename__ = "prediction_logs"
+
+    id = Column(Integer, primary_key=True)
+    patient_id = Column(Integer, ForeignKey("user_accounts.telegram_user_id"), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    horizon_min = Column(Integer, nullable=False)  # 15, 30, 60, 90, 120
+    predicted_sg = Column(Float, nullable=False)
+    actual_sg = Column(Float)  # filled in by reconciliation job
+    method = Column(String(20), default="estimator")  # estimator, ai
+    reconciled = Column(Boolean, default=False)
+
+    user = relationship("UserAccount")

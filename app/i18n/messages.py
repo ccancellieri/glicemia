@@ -63,6 +63,110 @@ MESSAGES = {
         "fr": "❓ Aide",
     },
 
+    # --- Glucose entry & What-if buttons ---
+    "btn_sg_enter": {
+        "it": "🩸 Glicemia",
+        "en": "🩸 Glucose",
+        "es": "🩸 Glucosa",
+        "fr": "🩸 Glycémie",
+    },
+    "btn_whatif": {
+        "it": "🔮 E se..?",
+        "en": "🔮 What if?",
+        "es": "🔮 ¿Y si..?",
+        "fr": "🔮 Et si..?",
+    },
+    "btn_whatif_meal": {
+        "it": "🍝 Pasto",
+        "en": "🍝 Meal",
+        "es": "🍝 Comida",
+        "fr": "🍝 Repas",
+    },
+    "btn_whatif_activity": {
+        "it": "🏃 Attività",
+        "en": "🏃 Activity",
+        "es": "🏃 Actividad",
+        "fr": "🏃 Activité",
+    },
+    "btn_whatif_bolus": {
+        "it": "💉 Bolo",
+        "en": "💉 Bolus",
+        "es": "💉 Bolo",
+        "fr": "💉 Bolus",
+    },
+    "btn_trend_up_fast": {
+        "it": "Sale veloce",
+        "en": "Rising fast",
+        "es": "Subiendo rápido",
+        "fr": "Monte vite",
+    },
+    "btn_trend_up": {
+        "it": "Sale",
+        "en": "Rising",
+        "es": "Subiendo",
+        "fr": "Monte",
+    },
+    "btn_trend_flat": {
+        "it": "Stabile",
+        "en": "Stable",
+        "es": "Estable",
+        "fr": "Stable",
+    },
+    "btn_trend_down": {
+        "it": "Scende",
+        "en": "Falling",
+        "es": "Bajando",
+        "fr": "Descend",
+    },
+    "btn_trend_down_fast": {
+        "it": "Scende veloce",
+        "en": "Falling fast",
+        "es": "Bajando rápido",
+        "fr": "Descend vite",
+    },
+    "sg_pick_range": {
+        "it": "Seleziona il range della glicemia:",
+        "en": "Select the glucose range:",
+        "es": "Selecciona el rango de glucosa:",
+        "fr": "Sélectionne la plage de glycémie :",
+    },
+    "sg_pick_value": {
+        "it": "Seleziona il valore esatto (mg/dL):",
+        "en": "Select the exact value (mg/dL):",
+        "es": "Selecciona el valor exacto (mg/dL):",
+        "fr": "Sélectionne la valeur exacte (mg/dL) :",
+    },
+    "sg_pick_trend": {
+        "it": "Seleziona la tendenza per {value} mg/dL:",
+        "en": "Select the trend for {value} mg/dL:",
+        "es": "Selecciona la tendencia para {value} mg/dL:",
+        "fr": "Sélectionne la tendance pour {value} mg/dL :",
+    },
+    "whatif_pick_scenario": {
+        "it": "Che scenario vuoi simulare?",
+        "en": "What scenario do you want to simulate?",
+        "es": "¿Qué escenario quieres simular?",
+        "fr": "Quel scénario veux-tu simuler ?",
+    },
+    "whatif_enter_carbs": {
+        "it": "Quanti grammi di carboidrati? (es. 80)",
+        "en": "How many grams of carbs? (e.g. 80)",
+        "es": "¿Cuántos gramos de carbohidratos? (ej. 80)",
+        "fr": "Combien de grammes de glucides ? (ex. 80)",
+    },
+    "whatif_enter_activity": {
+        "it": "Che attività e per quanto? (es. cycling 60min)",
+        "en": "What activity and for how long? (e.g. cycling 60min)",
+        "es": "¿Qué actividad y por cuánto tiempo? (ej. cycling 60min)",
+        "fr": "Quelle activité et combien de temps ? (ex. cycling 60min)",
+    },
+    "whatif_enter_bolus": {
+        "it": "Quante unità di bolo? (es. 3.5)",
+        "en": "How many units of bolus? (e.g. 3.5)",
+        "es": "¿Cuántas unidades de bolo? (ej. 3.5)",
+        "fr": "Combien d'unités de bolus ? (ex. 3.5)",
+    },
+
     # --- Activity submenu ---
     "btn_cycling": {
         "it": "🚴 Bici",
@@ -312,7 +416,10 @@ MESSAGES = {
             "• Inviare un *messaggio vocale*\n"
             "• Condividere la *posizione GPS*\n"
             "• Inviare un *file CSV* CareLink\n"
-            "• Scrivere qualsiasi domanda in chat\n"
+            "• Scrivere qualsiasi domanda in chat\n\n"
+            "🧠 *Memoria*\n"
+            "/memoria — Cosa ho imparato su di te\n"
+            "/dimentica <id> — Dimentica un ricordo\n"
         ),
         "en": (
             "🩸 *GliceMia — Commands*\n\n"
@@ -325,7 +432,10 @@ MESSAGES = {
             "• Send a *voice message*\n"
             "• Share your *GPS location*\n"
             "• Send a CareLink *CSV file*\n"
-            "• Type any question in chat\n"
+            "• Type any question in chat\n\n"
+            "🧠 *Memory*\n"
+            "/memory — What I've learned about you\n"
+            "/forget <id> — Forget a memory\n"
         ),
         "es": (
             "🩸 *GliceMia — Comandos*\n\n"
@@ -353,6 +463,154 @@ MESSAGES = {
             "• Envoyer un *fichier CSV* CareLink\n"
             "• Écrire n'importe quelle question dans le chat\n"
         ),
+    },
+    # --- Memory ---
+    "memory_title": {
+        "it": "🧠 *Memoria di {name}*\n\n",
+        "en": "🧠 *{name}'s Memory*\n\n",
+        "es": "🧠 *Memoria de {name}*\n\n",
+        "fr": "🧠 *Mémoire de {name}*\n\n",
+    },
+    "memory_empty": {
+        "it": "Non ho ancora ricordi per te, {name}. Continua a chattare e imparerò!",
+        "en": "I don't have any memories for you yet, {name}. Keep chatting and I'll learn!",
+        "es": "Aún no tengo recuerdos tuyos, {name}. ¡Sigue chateando y aprenderé!",
+        "fr": "Je n'ai pas encore de souvenirs pour toi, {name}. Continue à discuter et j'apprendrai !",
+    },
+    "memory_type_decision": {
+        "it": "💊 Decisioni",
+        "en": "💊 Decisions",
+        "es": "💊 Decisiones",
+        "fr": "💊 Décisions",
+    },
+    "memory_type_action": {
+        "it": "⚡ Azioni",
+        "en": "⚡ Actions",
+        "es": "⚡ Acciones",
+        "fr": "⚡ Actions",
+    },
+    "memory_type_preference": {
+        "it": "⚙️ Preferenze",
+        "en": "⚙️ Preferences",
+        "es": "⚙️ Preferencias",
+        "fr": "⚙️ Préférences",
+    },
+    "memory_type_health_insight": {
+        "it": "📊 Insight salute",
+        "en": "📊 Health insights",
+        "es": "📊 Insights de salud",
+        "fr": "📊 Insights santé",
+    },
+    "memory_type_learned_fact": {
+        "it": "📝 Fatti appresi",
+        "en": "📝 Learned facts",
+        "es": "📝 Hechos aprendidos",
+        "fr": "📝 Faits appris",
+    },
+    "memory_count": {
+        "it": "Totale: {count} ricordi attivi",
+        "en": "Total: {count} active memories",
+        "es": "Total: {count} recuerdos activos",
+        "fr": "Total : {count} souvenirs actifs",
+    },
+    "forget_usage": {
+        "it": "Uso: `/forget <id>` per dimenticare un ricordo, o `/forget all` per dimenticare tutto.",
+        "en": "Usage: `/forget <id>` to forget a memory, or `/forget all` to forget everything.",
+        "es": "Uso: `/forget <id>` para olvidar un recuerdo, o `/forget all` para olvidar todo.",
+        "fr": "Usage : `/forget <id>` pour oublier un souvenir, ou `/forget all` pour tout oublier.",
+    },
+    "forget_success": {
+        "it": "Ricordo #{id} dimenticato.",
+        "en": "Memory #{id} forgotten.",
+        "es": "Recuerdo #{id} olvidado.",
+        "fr": "Souvenir #{id} oublié.",
+    },
+    "forget_not_found": {
+        "it": "Ricordo #{id} non trovato.",
+        "en": "Memory #{id} not found.",
+        "es": "Recuerdo #{id} no encontrado.",
+        "fr": "Souvenir #{id} non trouvé.",
+    },
+    "forget_all_success": {
+        "it": "Ho dimenticato {count} ricordi. Ricominciamo da zero!",
+        "en": "I forgot {count} memories. Starting fresh!",
+        "es": "Olvidé {count} recuerdos. ¡Empezamos de nuevo!",
+        "fr": "J'ai oublié {count} souvenirs. On repart à zéro !",
+    },
+    # --- Accuracy ---
+    "accuracy_no_data": {
+        "it": "Non ho ancora abbastanza predizioni verificate. Riprova tra qualche giorno.",
+        "en": "Not enough verified predictions yet. Try again in a few days.",
+        "es": "Aún no tengo suficientes predicciones verificadas. Inténtalo en unos días.",
+        "fr": "Pas assez de prédictions vérifiées pour le moment. Réessaie dans quelques jours.",
+    },
+    # --- Manual Glucose Entry ---
+    "sg_select_value": {
+        "it": "Seleziona il valore glicemico (mg/dL):",
+        "en": "Select the glucose value (mg/dL):",
+        "es": "Selecciona el valor de glucosa (mg/dL):",
+        "fr": "Sélectionne la valeur de glucose (mg/dL) :",
+    },
+    "sg_confirm_prompt": {
+        "it": "Confermi il valore *{value} mg/dL* (trend: {trend})?",
+        "en": "Confirm value *{value} mg/dL* (trend: {trend})?",
+        "es": "Confirmar valor *{value} mg/dL* (tendencia: {trend})?",
+        "fr": "Confirmer la valeur *{value} mg/dL* (tendance : {trend}) ?",
+    },
+    "sg_confirm": {
+        "it": "Conferma",
+        "en": "Confirm",
+        "es": "Confirmar",
+        "fr": "Confirmer",
+    },
+    "sg_correct": {
+        "it": "Correggi valore",
+        "en": "Correct value",
+        "es": "Corregir valor",
+        "fr": "Corriger la valeur",
+    },
+    "sg_cancel": {
+        "it": "Annulla",
+        "en": "Cancel",
+        "es": "Cancelar",
+        "fr": "Annuler",
+    },
+    "sg_saved": {
+        "it": "Glicemia salvata: {value} mg/dL (trend: {trend})",
+        "en": "Glucose saved: {value} mg/dL (trend: {trend})",
+        "es": "Glucosa guardada: {value} mg/dL (tendencia: {trend})",
+        "fr": "Glycémie enregistrée : {value} mg/dL (tendance : {trend})",
+    },
+    "sg_invalid": {
+        "it": "Valore non valido. Invia un numero (es. 145).",
+        "en": "Invalid value. Send a number (e.g. 145).",
+        "es": "Valor no válido. Envía un número (ej. 145).",
+        "fr": "Valeur invalide. Envoie un nombre (ex. 145).",
+    },
+    "sg_enter_correct": {
+        "it": "Invia il valore corretto (es. 145):",
+        "en": "Send the correct value (e.g. 145):",
+        "es": "Envía el valor correcto (ej. 145):",
+        "fr": "Envoie la valeur correcte (ex. 145) :",
+    },
+    "sg_cancelled": {
+        "it": "Inserimento annullato.",
+        "en": "Entry cancelled.",
+        "es": "Entrada cancelada.",
+        "fr": "Saisie annulée.",
+    },
+    "sg_photo_detected": {
+        "it": "Ho letto il tuo dispositivo:",
+        "en": "I read your device:",
+        "es": "Leí tu dispositivo:",
+        "fr": "J'ai lu ton appareil :",
+    },
+    # --- What-if ---
+    "whatif_usage": {
+        "it": "Uso: /whatif <scenario>\n\nEsempi:\n/whatif 80g pasta\n/whatif cycling 60min\n/whatif 50g carbs + 3U bolus",
+        "en": "Usage: /whatif <scenario>\n\nExamples:\n/whatif 80g pasta\n/whatif cycling 60min\n/whatif 50g carbs + 3U bolus",
+        "es": "Uso: /whatif <escenario>\n\nEjemplos:\n/whatif 80g pasta\n/whatif cycling 60min\n/whatif 50g carbs + 3U bolus",
+        "fr": "Utilisation: /whatif <scénario>\n\nExemples:\n/whatif 80g pâtes\n/whatif cycling 60min\n/whatif 50g carbs + 3U bolus",
     },
 }
 

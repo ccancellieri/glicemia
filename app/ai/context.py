@@ -1,6 +1,11 @@
-"""12-layer context builder — injects real-time per-patient data into every AI call."""
+"""13-layer context builder — injects real-time per-patient data into every AI call.
+
+Layer 2 (GLUCOSE ANALYSIS) uses Gluco-LLM structured prompt format
+(Li et al., 2025) for improved LLM glucose reasoning.
+"""
 
 import logging
+import math
 from datetime import datetime, timedelta
 
 from sqlalchemy import func
@@ -11,17 +16,23 @@ from app.models import (
     Activity, Condition, GlucosePattern, InsulinSetting,
     PatientProfile, HealthRecord,
 )
+from app.memory import build_memory_context
 
 log = logging.getLogger(__name__)
 
 
-def build_context(session: Session, patient_id: int = None, now: datetime = None) -> str:
-    """Build the full 12-layer context string for AI system prompt injection.
-    All queries are scoped to the given patient_id."""
+def build_context(
+    session: Session, patient_id: int = None, now: datetime = None, query: str = None
+) -> str:
+    """Build the full 13-layer context string for AI system prompt injection.
+    All queries are scoped to the given patient_id.
+    Layer 13 injects per-user memories learned from previous conversations."""
     now = now or datetime.utcnow()
     pid = patient_id
     layers = [
+        _layer_narrative_summary(session, now, pid),
         _layer_current_cgm(session, now, pid),
+        _layer_input_statistics(session, now, pid),
         _layer_recent_3h(session, now, pid),
         _layer_today_metrics(session, now, pid),
         _layer_hourly_pattern(session, now, pid),
@@ -33,6 +44,7 @@ def build_context(session: Session, patient_id: int = None, now: datetime = None
         _layer_patient_profile(session, pid),
         _layer_recent_meals(session, now, pid),
         _layer_health_data(session, now, pid),
+        build_memory_context(session, pid, query=query),
     ]
     return "\n\n".join(layer for layer in layers if layer)
 
@@ -42,6 +54,100 @@ def _pid_filter(query, model, pid):
     if pid is not None:
         return query.filter(model.patient_id == pid)
     return query
+
+
+def _layer_narrative_summary(session: Session, now: datetime, pid) -> str:
+    """Layer 0: Human-readable situation assessment for LLM grounding.
+
+    Synthesizes current SG, trend, IOB, recent meals, and historical
+    pattern into a short narrative the LLM can use as a starting point.
+    """
+    # Current reading
+    q = session.query(GlucoseReading).filter(
+        GlucoseReading.timestamp >= now - timedelta(minutes=15)
+    )
+    q = _pid_filter(q, GlucoseReading, pid)
+    reading = q.order_by(GlucoseReading.timestamp.desc()).first()
+    if not reading:
+        return ""
+
+    sg = reading.sg
+    trend = reading.trend or "FLAT"
+
+    # IOB
+    pq = session.query(PumpStatus).filter(PumpStatus.timestamp >= now - timedelta(minutes=15))
+    pq = _pid_filter(pq, PumpStatus, pid)
+    pump = pq.order_by(PumpStatus.timestamp.desc()).first()
+    iob = pump.active_insulin if pump and pump.active_insulin is not None else 0
+
+    # Historical pattern for this hour
+    hour_key = now.strftime("%H:00")
+    pattern = session.query(GlucosePattern).filter_by(
+        period_type="hourly", period_key=hour_key
+    )
+    pattern = _pid_filter(pattern, GlucosePattern, pid).first()
+    historical_avg = pattern.avg_sg if pattern else None
+
+    # Last meal
+    mq = session.query(Meal).filter(Meal.timestamp >= now - timedelta(hours=4))
+    mq = _pid_filter(mq, Meal, pid)
+    last_meal = mq.order_by(Meal.timestamp.desc()).first()
+
+    # Last bolus
+    bq = session.query(BolusEvent).filter(BolusEvent.timestamp >= now - timedelta(hours=4))
+    bq = _pid_filter(bq, BolusEvent, pid)
+    last_bolus = bq.order_by(BolusEvent.timestamp.desc()).first()
+
+    # Build narrative
+    trend_words = {
+        "UP": "RISING", "UP_FAST": "RISING FAST", "UP_RAPID": "RISING RAPIDLY",
+        "DOWN": "FALLING", "DOWN_FAST": "FALLING FAST", "DOWN_RAPID": "FALLING RAPIDLY",
+        "FLAT": "STABLE",
+    }
+    trend_word = trend_words.get(trend, "STABLE")
+
+    lines = [f"SITUATION SUMMARY:"]
+    lines.append(f"  You are currently at {sg:.0f} mg/dL and {trend_word}.")
+
+    if historical_avg:
+        diff = sg - historical_avg
+        compare = "higher" if diff > 5 else ("lower" if diff < -5 else "close to")
+        lines.append(
+            f"  This is {compare} your usual {historical_avg:.0f} mg/dL "
+            f"at this hour ({hour_key})."
+        )
+
+    if last_meal and last_meal.carbs_g:
+        meal_ago = int((now - last_meal.timestamp).total_seconds() / 60)
+        lines.append(f"  You had {last_meal.carbs_g:.0f}g carbs {meal_ago} min ago.")
+
+    if last_bolus and last_bolus.volume_units:
+        bolus_ago = int((now - last_bolus.timestamp).total_seconds() / 60)
+        lines.append(f"  Last bolus: {last_bolus.volume_units:.1f}U, {bolus_ago} min ago. IOB: {iob:.1f}U.")
+
+    # Quick prediction using simple model
+    try:
+        from app.analytics.estimator import predict_glucose
+        pred_30 = predict_glucose(session, minutes_ahead=30)
+        pred_60 = predict_glucose(session, minutes_ahead=60)
+        if "predicted_sg" in pred_30 and "predicted_sg" in pred_60:
+            lines.append(
+                f"  Prediction: ~{pred_30['predicted_sg']} in 30min, "
+                f"~{pred_60['predicted_sg']} in 60min."
+            )
+            p60 = pred_60["predicted_sg"]
+            if p60 < 70:
+                lines.append("  Assessment: HYPO RISK — take preventive action.")
+            elif p60 > 250:
+                lines.append("  Assessment: HIGH RISK — correction may be needed.")
+            elif 70 <= p60 <= 180:
+                lines.append("  Assessment: Likely to stay in range.")
+            else:
+                lines.append("  Assessment: Monitor closely.")
+    except Exception:
+        pass
+
+    return "\n".join(lines)
 
 
 def _layer_current_cgm(session: Session, now: datetime, pid) -> str:
@@ -76,6 +182,112 @@ def _layer_current_cgm(session: Session, now: datetime, pid) -> str:
             parts.append(f"battery={pump.battery_pct}%")
 
     return ", ".join(parts)
+
+
+def _layer_input_statistics(session: Session, now: datetime, pid) -> str:
+    """Gluco-LLM structured analysis layer — statistics over last 3h CGM window.
+
+    Computes min/max/median/mean/std, rate of change, CV%, key lag values,
+    and last meal/bolus timing following the prompt format from
+    Li et al. 2025 (Gluco-LLM).
+    """
+    cutoff = now - timedelta(hours=3)
+
+    # --- 3h glucose readings ---
+    q = session.query(GlucoseReading).filter(GlucoseReading.timestamp >= cutoff)
+    q = _pid_filter(q, GlucoseReading, pid)
+    readings = q.order_by(GlucoseReading.timestamp.asc()).all()
+    if not readings or len(readings) < 3:
+        return ""
+
+    values = [r.sg for r in readings]
+    n = len(values)
+    mean_sg = sum(values) / n
+    sorted_v = sorted(values)
+    median_sg = sorted_v[n // 2] if n % 2 else (sorted_v[n // 2 - 1] + sorted_v[n // 2]) / 2
+    min_sg = sorted_v[0]
+    max_sg = sorted_v[-1]
+    variance = sum((v - mean_sg) ** 2 for v in values) / n
+    std_sg = math.sqrt(variance)
+    cv_pct = (std_sg / mean_sg * 100) if mean_sg > 0 else 0
+
+    # --- Rate of change (linear regression over last 15min / ~3 readings) ---
+    recent = [(r.timestamp, r.sg) for r in readings[-4:]]
+    if len(recent) >= 2:
+        t0 = recent[0][0]
+        xs = [(r[0] - t0).total_seconds() / 60.0 for r in recent]
+        ys = [r[1] for r in recent]
+        n_r = len(xs)
+        x_mean = sum(xs) / n_r
+        y_mean = sum(ys) / n_r
+        num = sum((xs[i] - x_mean) * (ys[i] - y_mean) for i in range(n_r))
+        den = sum((xs[i] - x_mean) ** 2 for i in range(n_r))
+        rate = num / den if den > 0 else 0.0  # mg/dL per minute
+    else:
+        rate = 0.0
+
+    if rate > 1.0:
+        trend_label = "RISING FAST"
+    elif rate > 0.3:
+        trend_label = "RISING"
+    elif rate > -0.3:
+        trend_label = "STABLE"
+    elif rate > -1.0:
+        trend_label = "FALLING"
+    else:
+        trend_label = "FALLING FAST"
+
+    # --- Key lag values ---
+    lag_targets = [15, 30, 45, 60, 90]
+    lag_values = {}
+    for lag in lag_targets:
+        target_time = now - timedelta(minutes=lag)
+        closest = min(readings, key=lambda r: abs((r.timestamp - target_time).total_seconds()))
+        if abs((closest.timestamp - target_time).total_seconds()) <= 600:  # within 10min
+            lag_values[lag] = f"{closest.sg:.0f}"
+        else:
+            lag_values[lag] = "n/a"
+
+    lags_str = ", ".join(f"t-{lag}: {lag_values[lag]}" for lag in lag_targets)
+
+    # --- Last meal ---
+    mq = session.query(Meal).filter(Meal.timestamp >= now - timedelta(hours=6))
+    mq = _pid_filter(mq, Meal, pid)
+    last_meal = mq.order_by(Meal.timestamp.desc()).first()
+    if last_meal and last_meal.carbs_g:
+        meal_ago = int((now - last_meal.timestamp).total_seconds() / 60)
+        meal_str = f"  Last meal: {last_meal.carbs_g:.0f}g carbs, {meal_ago} min ago"
+    else:
+        meal_str = "  Last meal: n/a"
+
+    # --- Last bolus + IOB ---
+    bq = session.query(BolusEvent).filter(BolusEvent.timestamp >= now - timedelta(hours=6))
+    bq = _pid_filter(bq, BolusEvent, pid)
+    last_bolus = bq.order_by(BolusEvent.timestamp.desc()).first()
+    if last_bolus and last_bolus.volume_units:
+        bolus_ago = int((now - last_bolus.timestamp).total_seconds() / 60)
+        bolus_str = f"  Last bolus: {last_bolus.volume_units:.1f}U, {bolus_ago} min ago"
+    else:
+        bolus_str = "  Last bolus: n/a"
+
+    # IOB from most recent PumpStatus
+    pq = session.query(PumpStatus).filter(PumpStatus.timestamp >= now - timedelta(minutes=15))
+    pq = _pid_filter(pq, PumpStatus, pid)
+    pump = pq.order_by(PumpStatus.timestamp.desc()).first()
+    iob_str = f" | IOB: {pump.active_insulin:.1f}U" if pump and pump.active_insulin is not None else ""
+
+    cv_label = "stable" if cv_pct < 20 else ("moderate" if cv_pct < 36 else "high")
+
+    return (
+        f"GLUCOSE ANALYSIS (last 3h):\n"
+        f"  Range: {min_sg:.0f}-{max_sg:.0f} mg/dL | Median: {median_sg:.0f} | "
+        f"Mean: {mean_sg:.0f} ±{std_sg:.0f}\n"
+        f"  Current trend: {trend_label} ({rate:+.1f} mg/dL/min)\n"
+        f"  CV: {cv_pct:.1f}% ({cv_label})\n"
+        f"  Key values: {lags_str}\n"
+        f"{meal_str}\n"
+        f"{bolus_str}{iob_str}"
+    )
 
 
 def _layer_recent_3h(session: Session, now: datetime, pid) -> str:

@@ -1,6 +1,7 @@
 """Telegram bot handlers — multi-patient, per-user auth from DB."""
 
 import base64
+import json
 import logging
 from datetime import datetime
 
@@ -11,7 +12,7 @@ from app.config import settings
 from app.database import get_session
 from app.models import (
     GlucoseReading, PumpStatus, LiabilityWaiver,
-    ChatMessage, PatientProfile, UserAccount,
+    ChatMessage, PatientProfile, UserAccount, GDPRConsent,
 )
 from app.users import get_user
 from app.ai.llm import chat as ai_chat
@@ -26,6 +27,20 @@ from app.i18n.messages import msg
 from app.carelink.csv_import import import_carelink_csv_bytes
 
 log = logging.getLogger(__name__)
+
+
+async def _extract_memories_safe(patient_id: int, user_text: str, response: str):
+    """Background task: extract memories from a conversation turn.
+    Runs in its own session so it doesn't block the handler."""
+    try:
+        from app.memory import extract_memories
+        s = get_session()
+        try:
+            await extract_memories(s, patient_id, user_text, response)
+        finally:
+            s.close()
+    except Exception as e:
+        log.debug("Background memory extraction failed: %s", e)
 
 
 # --- Per-user helpers ---
@@ -204,16 +219,20 @@ async def cmd_apikey(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if lang == "it":
                 await update.message.reply_text(
                     "Uso: /apikey <servizio> <chiave>\n"
-                    "Servizi: gemini, openweather\n"
-                    "Esempio: /apikey gemini AIza...\n\n"
-                    "Usa /apikey <servizio> clear per rimuovere."
+                    "Servizi: gemini, groq, openrouter, openweather\n"
+                    "Esempio: /apikey groq gsk_...\n\n"
+                    "Usa /apikey <servizio> clear per rimuovere.\n\n"
+                    "Le chiavi sono criptate nel database e il messaggio "
+                    "viene eliminato automaticamente."
                 )
             else:
                 await update.message.reply_text(
                     "Usage: /apikey <service> <key>\n"
-                    "Services: gemini, openweather\n"
-                    "Example: /apikey gemini AIza...\n\n"
-                    "Use /apikey <service> clear to remove."
+                    "Services: gemini, groq, openrouter, openweather\n"
+                    "Example: /apikey groq gsk_...\n\n"
+                    "Use /apikey <service> clear to remove.\n\n"
+                    "Keys are encrypted in the database and your message "
+                    "is automatically deleted."
                 )
             return
 
@@ -222,11 +241,15 @@ async def cmd_apikey(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if service == "gemini":
             user.gemini_api_key = None if key_value == "clear" else key_value
+        elif service == "groq":
+            user.groq_api_key = None if key_value == "clear" else key_value
+        elif service == "openrouter":
+            user.openrouter_api_key = None if key_value == "clear" else key_value
         elif service == "openweather":
             user.openweather_api_key = None if key_value == "clear" else key_value
         else:
             await update.message.reply_text(
-                f"Unknown service: {service}. Use: gemini, openweather"
+                f"Unknown service: {service}. Use: gemini, groq, openrouter, openweather"
             )
             return
 
@@ -430,6 +453,106 @@ async def cmd_usage(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session.close()
 
 
+# --- Memory Commands ---
+
+async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /memory — show what the bot has learned about this user."""
+    session = get_session()
+    try:
+        user = await _require_user(update, session)
+        if not user:
+            return
+
+        lang = _lang(user)
+        name = _name(user)
+        pid = _pid(user)
+
+        from app.memory import get_all_user_memories, MEMORY_TYPES
+
+        # Optional filter: /memory decision, /memory preference, etc.
+        type_filter = None
+        if context.args:
+            arg = context.args[0].lower()
+            if arg in MEMORY_TYPES:
+                type_filter = arg
+
+        memories = get_all_user_memories(session, pid, memory_type=type_filter)
+
+        if not memories:
+            await update.message.reply_text(msg("memory_empty", lang, name=name))
+            return
+
+        text = msg("memory_title", lang, name=name)
+
+        # Group by type
+        type_labels = {
+            "decision": msg("memory_type_decision", lang),
+            "action": msg("memory_type_action", lang),
+            "preference": msg("memory_type_preference", lang),
+            "health_insight": msg("memory_type_health_insight", lang),
+            "learned_fact": msg("memory_type_learned_fact", lang),
+        }
+
+        grouped: dict[str, list] = {}
+        for mem in memories:
+            grouped.setdefault(mem.memory_type, []).append(mem)
+
+        for mem_type, label in type_labels.items():
+            mems = grouped.get(mem_type, [])
+            if not mems:
+                continue
+            text += f"*{label}*\n"
+            for m in mems[:10]:
+                stars = "★" * min(m.importance, 5) + "☆" * max(0, 5 - m.importance)
+                text += f"  `#{m.id}` {stars} {m.content}\n"
+            text += "\n"
+
+        text += msg("memory_count", lang, count=len(memories))
+        await update.message.reply_text(text, parse_mode="Markdown")
+
+    finally:
+        session.close()
+
+
+async def cmd_forget(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /forget <id> or /forget all — remove memories."""
+    session = get_session()
+    try:
+        user = await _require_user(update, session)
+        if not user:
+            return
+
+        lang = _lang(user)
+        pid = _pid(user)
+
+        if not context.args:
+            await update.message.reply_text(msg("forget_usage", lang), parse_mode="Markdown")
+            return
+
+        arg = context.args[0].lower()
+
+        if arg == "all":
+            from app.memory import forget_all_memories
+            count = forget_all_memories(session, pid)
+            await update.message.reply_text(msg("forget_all_success", lang, count=count))
+            return
+
+        try:
+            memory_id = int(arg)
+        except ValueError:
+            await update.message.reply_text(msg("forget_usage", lang), parse_mode="Markdown")
+            return
+
+        from app.memory import forget_memory
+        if forget_memory(session, pid, memory_id):
+            await update.message.reply_text(msg("forget_success", lang, id=memory_id))
+        else:
+            await update.message.reply_text(msg("forget_not_found", lang, id=memory_id))
+
+    finally:
+        session.close()
+
+
 # --- Main Commands ---
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -537,6 +660,365 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session.close()
 
 
+async def cmd_privacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /privacy — GDPR data subject rights.
+
+    Subcommands: info, consent, export, delete
+    """
+    from app.privacy import (
+        PRIVACY_NOTICE, CONSENT_PURPOSES,
+        get_consent_status, record_consent,
+        export_user_data, delete_user_data,
+    )
+    import io
+
+    session = get_session()
+    try:
+        user = await _require_user(update, session)
+        if not user:
+            return
+
+        lang = _lang(user)
+        args = context.args
+        subcmd = args[0].lower() if args else "info"
+
+        if subcmd == "info":
+            notice = PRIVACY_NOTICE.get(lang, PRIVACY_NOTICE["en"])
+            await update.message.reply_text(notice)
+
+        elif subcmd == "consent":
+            # Show current consent status with inline buttons
+            status = get_consent_status(session, _pid(user))
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            buttons = []
+            for purpose, desc in CONSENT_PURPOSES.items():
+                current = status.get(purpose, False)
+                label = f"{'[ON]' if current else '[OFF]'} {purpose}"
+                buttons.append([InlineKeyboardButton(
+                    label, callback_data=f"gdpr_toggle_{purpose}"
+                )])
+            buttons.append([InlineKeyboardButton(
+                "Grant all" if lang != "it" else "Accetta tutti",
+                callback_data="gdpr_grant_all"
+            )])
+            buttons.append([InlineKeyboardButton(
+                "Withdraw all" if lang != "it" else "Revoca tutti",
+                callback_data="gdpr_withdraw_all"
+            )])
+
+            text = (
+                "Your GDPR consents:\n\n" if lang != "it"
+                else "I tuoi consensi GDPR:\n\n"
+            )
+            for purpose, desc in CONSENT_PURPOSES.items():
+                on = status.get(purpose, False)
+                text += f"{'[ON]' if on else '[OFF]'} {purpose}\n  {desc}\n\n"
+
+            await update.message.reply_text(
+                text, reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+        elif subcmd == "export":
+            await update.message.reply_text(
+                "Exporting your data..." if lang != "it"
+                else "Esportazione dati in corso..."
+            )
+            data = export_user_data(session, _pid(user))
+            json_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+            buf = io.BytesIO(json_bytes)
+            buf.name = f"glicemia_data_{_pid(user)}.json"
+            await update.message.reply_document(
+                document=buf,
+                caption=(
+                    "Your complete data export (GDPR Art. 15/20)."
+                    if lang != "it"
+                    else "Export completo dei tuoi dati (GDPR Art. 15/20)."
+                ),
+            )
+
+        elif subcmd == "delete":
+            # Require confirmation
+            if len(args) < 2 or args[1].upper() != "CONFIRM":
+                await update.message.reply_text(
+                    "This will permanently delete ALL your health data.\n"
+                    "Type `/privacy delete CONFIRM` to proceed.\n\n"
+                    "Consent audit trail will be retained (legal obligation)."
+                    if lang != "it"
+                    else "Questo cancellera TUTTI i tuoi dati sanitari.\n"
+                    "Scrivi `/privacy delete CONFIRM` per procedere.\n\n"
+                    "La cronologia dei consensi sara conservata (obbligo legale).",
+                    parse_mode="Markdown",
+                )
+                return
+
+            result = delete_user_data(session, _pid(user))
+            summary = "\n".join(f"  {k}: {v}" for k, v in result.items())
+            await update.message.reply_text(
+                f"Data deleted (GDPR Art. 17):\n{summary}\n\n"
+                "Your account has been deactivated."
+                if lang != "it"
+                else f"Dati cancellati (GDPR Art. 17):\n{summary}\n\n"
+                "Il tuo account e stato disattivato."
+            )
+
+        else:
+            await update.message.reply_text(
+                "Usage: /privacy [info|consent|export|delete]"
+            )
+    finally:
+        session.close()
+
+
+async def cmd_sg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /sg — manual glucose entry.
+
+    Usage:
+        /sg 145         — enter SG 145 mg/dL (goes to trend selection)
+        /sg 145 UP      — enter SG 145 with rising trend (confirm & save)
+        /sg              — show range picker buttons
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from app.bot.menus import glucose_range_menu, glucose_trend_menu
+
+    session = get_session()
+    try:
+        user = await _require_user(update, session)
+        if not user:
+            return
+
+        lang = _lang(user)
+        pid = _pid(user)
+        args = context.args or []
+
+        if not args:
+            # Show step-by-step range picker
+            await update.message.reply_text(
+                msg("sg_pick_range", lang),
+                reply_markup=glucose_range_menu(lang),
+            )
+            return
+
+        # Parse value
+        try:
+            sg_value = int(float(args[0]))
+        except ValueError:
+            await update.message.reply_text(msg("sg_invalid", lang))
+            return
+
+        if len(args) > 1:
+            # Trend provided — confirm & save directly
+            trend = args[1].upper()
+            valid_trends = ["UP", "UP_FAST", "UP_RAPID", "DOWN", "DOWN_FAST", "DOWN_RAPID", "FLAT"]
+            if trend not in valid_trends:
+                trend = "FLAT"
+
+            keyboard = [
+                [InlineKeyboardButton(
+                    msg("sg_confirm", lang),
+                    callback_data=f"sg_confirm:{sg_value}:{trend}:0:manual:{pid}"
+                )],
+                [InlineKeyboardButton(msg("sg_cancel", lang), callback_data="sg_cancel")],
+            ]
+            await update.message.reply_text(
+                msg("sg_confirm_prompt", lang, value=sg_value, trend=trend),
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown",
+            )
+        else:
+            # No trend — show trend picker
+            await update.message.reply_text(
+                msg("sg_pick_trend", lang, value=sg_value),
+                reply_markup=glucose_trend_menu(sg_value, lang),
+            )
+
+    finally:
+        session.close()
+
+
+async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /whatif — scenario simulation with trajectory prediction.
+
+    Examples:
+        /whatif 80g pasta
+        /whatif cycling 60min
+        /whatif 50g carbs + 3U bolus
+        /whatif skip next bolus
+    """
+    import re
+    from app.analytics.estimator import predict_trajectory, estimate_activity_impact
+
+    session = get_session()
+    try:
+        user = await _require_user(update, session)
+        if not user:
+            return
+
+        lang = _lang(user)
+        pid = _pid(user)
+        raw = " ".join(context.args) if context.args else ""
+        if not raw.strip():
+            await update.message.reply_text(
+                msg("whatif_usage", lang)
+            )
+            return
+
+        # Parse structured patterns
+        carbs_g = 0.0
+        bolus_u = 0.0
+        activity_type = None
+        activity_min = 0
+
+        # Match carbs: "80g", "80g carbs", "80g pasta"
+        carb_match = re.search(r'(\d+(?:\.\d+)?)\s*g(?:\s|$)', raw, re.IGNORECASE)
+        if carb_match:
+            carbs_g = float(carb_match.group(1))
+
+        # Match bolus: "3U", "3.5U bolus"
+        bolus_match = re.search(r'(\d+(?:\.\d+)?)\s*[uU](?:\s|$)', raw)
+        if bolus_match:
+            bolus_u = float(bolus_match.group(1))
+
+        # Match activity: "cycling 60min", "walking 30min"
+        activity_match = re.search(
+            r'(cycling|walking|running|gym|swimming|hiking)\s+(\d+)\s*min',
+            raw, re.IGNORECASE
+        )
+        if activity_match:
+            activity_type = activity_match.group(1).lower()
+            activity_min = int(activity_match.group(2))
+
+        if activity_type:
+            # Activity scenario
+            impact = estimate_activity_impact(
+                session, activity_type, activity_min, intensity="moderate"
+            )
+            if "error" in impact:
+                await update.message.reply_text(msg("no_data", lang, name=_name(user)))
+                return
+
+            lines = [
+                f"*What if: {activity_type} {activity_min}min*",
+                f"(current SG {impact['current_sg']}, IOB {impact['iob_current']}U)\n",
+                f"Estimated drop: ~{impact['estimated_drop']} mg/dL",
+                f"Predicted SG after: ~{impact['predicted_sg_end']} mg/dL",
+                f"Range: {impact['predicted_range']}",
+                f"Risk: {impact['risk_level']}",
+            ]
+            if impact['carbs_recommended_g'] > 0:
+                lines.append(f"Suggested carbs before: {impact['carbs_recommended_g']}g")
+
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        elif carbs_g > 0 or bolus_u > 0:
+            # Meal/bolus scenario
+            trajectory = predict_trajectory(
+                session, carbs_g=carbs_g, bolus_u=bolus_u, horizons=(15, 30, 60, 90, 120)
+            )
+            if not trajectory or "error" in trajectory[0]:
+                await update.message.reply_text(msg("no_data", lang, name=_name(user)))
+                return
+
+            current_sg = trajectory[0].get("current_sg", "?")
+            iob = trajectory[0].get("iob_current", 0)
+
+            scenario_parts = []
+            if carbs_g > 0:
+                scenario_parts.append(f"{carbs_g:.0f}g carbs")
+            if bolus_u > 0:
+                scenario_parts.append(f"{bolus_u:.1f}U bolus")
+            scenario_desc = " + ".join(scenario_parts)
+
+            lines = [
+                f"*What if: {scenario_desc}*",
+                f"(current SG {current_sg}, IOB {iob}U)\n",
+            ]
+            for p in trajectory:
+                t = p["minutes_ahead"]
+                sg = p["predicted_sg"]
+                lo, hi = p["range_low"], p["range_high"]
+                flag = ""
+                if sg < 70:
+                    flag = " ⚠️ HYPO"
+                elif sg > 250:
+                    flag = " ⚠️ HIGH"
+                lines.append(f"  {t:>3} min: ~{sg} mg/dL ({lo}-{hi}){flag}")
+
+            # Add bolus suggestion if only carbs given
+            if carbs_g > 0 and bolus_u == 0:
+                from app.analytics.estimator import estimate_bolus
+                suggestion = estimate_bolus(session, carbs_g)
+                if "total_suggested_bolus" in suggestion:
+                    lines.append(
+                        f"\nSuggested bolus: {suggestion['total_suggested_bolus']}U "
+                        f"(I:C 1:{suggestion['ic_ratio']:.0f})"
+                    )
+
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        else:
+            # Unstructured — send to AI for interpretation
+            from app.analytics.estimator import get_current_state
+            state = get_current_state(session)
+            state_desc = (
+                f"SG={state['sg']}, trend={state['trend']}, IOB={state['iob']}"
+                if state else "No CGM data"
+            )
+            prompt = (
+                f"The user asks: 'What if {raw}?'\n"
+                f"Current state: {state_desc}\n"
+                f"Analyze the scenario and predict glucose trajectory at 30 and 60 min."
+            )
+            ctx = build_context(session, patient_id=pid, now=datetime.utcnow(), query=raw)
+            system = build_system_prompt(_name(user), lang, ctx)
+            response = await ai_chat(
+                user_message=prompt, system_prompt=system, patient_id=pid
+            )
+            await update.message.reply_text(response)
+    finally:
+        session.close()
+
+
+async def cmd_accuracy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /accuracy — show prediction accuracy metrics (MARD, CEG zones)."""
+    from app.analytics.metrics import reconcile_predictions, compute_prediction_accuracy
+
+    session = get_session()
+    try:
+        user = await _require_user(update, session)
+        if not user:
+            return
+
+        pid = _pid(user)
+
+        # Reconcile pending predictions first
+        reconciled = reconcile_predictions(session, patient_id=pid)
+
+        # Compute accuracy
+        accuracy = compute_prediction_accuracy(session, patient_id=pid, days=7)
+        if "error" in accuracy:
+            await update.message.reply_text(
+                msg("accuracy_no_data", _lang(user))
+            )
+            return
+
+        lines = ["*Prediction Accuracy (7 days)*\n"]
+        if reconciled > 0:
+            lines.append(f"({reconciled} new predictions reconciled)\n")
+
+        for horizon, metrics in sorted(accuracy.items()):
+            zones = metrics["ceg_zones"]
+            lines.append(
+                f"*{horizon} min* — MARD: {metrics['mard_pct']}%, "
+                f"RMSE: {metrics['rmse']} mg/dL\n"
+                f"  Safe (A+B): {metrics['clinically_safe_pct']}% "
+                f"| A: {zones.get('A', 0)}% B: {zones.get('B', 0)}% "
+                f"C: {zones.get('C', 0)}% D: {zones.get('D', 0)}% E: {zones.get('E', 0)}%\n"
+                f"  Predictions: {metrics['n']}"
+            )
+
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    finally:
+        session.close()
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle inline keyboard button presses."""
     query = update.callback_query
@@ -553,11 +1035,95 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pid = _pid(user)
         data = query.data
 
-        if data == "main_menu":
+        # --- GDPR consent callbacks ---
+        if data.startswith("gdpr_toggle_"):
+            from app.privacy import has_consent, record_consent, CONSENT_PURPOSES
+            purpose = data.replace("gdpr_toggle_", "")
+            current = has_consent(session, pid, purpose)
+            record_consent(session, pid, purpose, not current, language=lang)
+            status_str = "withdrawn" if current else "granted"
+            await query.edit_message_text(
+                f"Consent for '{purpose}' {status_str}."
+            )
+            return
+
+        elif data == "gdpr_grant_all":
+            from app.privacy import record_consent, CONSENT_PURPOSES
+            for purpose in CONSENT_PURPOSES:
+                record_consent(session, pid, purpose, True, language=lang)
+            await query.edit_message_text(
+                "All consents granted." if lang != "it" else "Tutti i consensi accettati."
+            )
+            return
+
+        elif data == "gdpr_withdraw_all":
+            from app.privacy import record_consent, CONSENT_PURPOSES
+            for purpose in CONSENT_PURPOSES:
+                record_consent(session, pid, purpose, False, language=lang)
+            await query.edit_message_text(
+                "All consents withdrawn." if lang != "it" else "Tutti i consensi revocati."
+            )
+            return
+
+        elif data == "main_menu":
             await query.edit_message_text(
                 msg("menu_title", lang),
                 reply_markup=main_menu(lang),
             )
+
+        # --- Glucose entry flow: sg_enter → sg_range → sg_val → sg_trend → save ---
+        elif data == "sg_enter":
+            from app.bot.menus import glucose_range_menu
+            await query.edit_message_text(
+                msg("sg_pick_range", lang),
+                reply_markup=glucose_range_menu(lang),
+            )
+
+        elif data.startswith("sg_range:"):
+            from app.bot.menus import glucose_value_menu
+            _, low, high = data.split(":")
+            await query.edit_message_text(
+                msg("sg_pick_value", lang),
+                reply_markup=glucose_value_menu(int(low), int(high), lang),
+            )
+
+        elif data.startswith("sg_val:"):
+            from app.bot.menus import glucose_trend_menu
+            sg_value = int(data.split(":")[1])
+            await query.edit_message_text(
+                msg("sg_pick_trend", lang, value=sg_value),
+                reply_markup=glucose_trend_menu(sg_value, lang),
+            )
+
+        elif data.startswith("sg_trend:"):
+            # Final step: save the reading
+            parts = data.split(":")
+            sg_value = int(parts[1])
+            trend = parts[2]
+            _save_glucose_reading(session, pid, sg_value, trend, None, "manual")
+            await query.edit_message_text(
+                msg("sg_saved", lang, value=sg_value, trend=trend)
+            )
+
+        # --- What-if flow ---
+        elif data == "whatif_menu":
+            from app.bot.menus import glucose_whatif_menu
+            await query.edit_message_text(
+                msg("whatif_pick_scenario", lang),
+                reply_markup=glucose_whatif_menu(lang),
+            )
+
+        elif data == "whatif_meal":
+            context.user_data["editing"] = "whatif_carbs"
+            await query.edit_message_text(msg("whatif_enter_carbs", lang))
+
+        elif data == "whatif_activity":
+            context.user_data["editing"] = "whatif_activity"
+            await query.edit_message_text(msg("whatif_enter_activity", lang))
+
+        elif data == "whatif_bolus":
+            context.user_data["editing"] = "whatif_bolus"
+            await query.edit_message_text(msg("whatif_enter_bolus", lang))
 
         elif data == "status":
             reading = (
@@ -913,11 +1479,72 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(btns))
 
+        # --- Glucose reading callbacks ---
+        elif data.startswith("sg_confirm:"):
+            # sg_confirm:value:trend:iob:source:pid
+            parts = data.split(":")
+            sg_val = float(parts[1])
+            trend_val = parts[2] if len(parts) > 2 else "FLAT"
+            iob_val = float(parts[3]) if len(parts) > 3 else None
+            source = parts[4] if len(parts) > 4 else "manual"
+            sg_pid = int(parts[5]) if len(parts) > 5 else pid
+
+            _save_glucose_reading(session, sg_pid, sg_val, trend_val, iob_val, source)
+            await query.edit_message_text(
+                msg("sg_saved", lang, value=int(sg_val), trend=trend_val)
+            )
+
+        elif data.startswith("sg_quick:"):
+            # sg_quick:value:pid — quick keyboard tap, save directly with FLAT trend
+            parts = data.split(":")
+            sg_val = float(parts[1])
+            sg_pid = int(parts[2]) if len(parts) > 2 else pid
+
+            _save_glucose_reading(session, sg_pid, sg_val, "FLAT", None, "manual")
+            await query.edit_message_text(
+                msg("sg_saved", lang, value=int(sg_val), trend="FLAT")
+            )
+
+        elif data.startswith("sg_correct:"):
+            # sg_correct:original_value:pid — user wants to manually correct
+            context.user_data["editing"] = "sg_manual"
+            prompt = msg("sg_enter_correct", lang)
+            await query.edit_message_text(prompt)
+
+        elif data == "sg_cancel":
+            await query.edit_message_text(
+                msg("sg_cancelled", lang)
+            )
+
         else:
             log.debug("Unhandled callback: %s", data)
 
     finally:
         session.close()
+
+
+def _save_glucose_reading(session, patient_id, sg, trend, iob, source):
+    """Save a manually entered or photo-extracted glucose reading."""
+    reading = GlucoseReading(
+        patient_id=patient_id,
+        timestamp=datetime.utcnow(),
+        sg=sg,
+        trend=trend,
+        source=source or "manual",
+    )
+    session.add(reading)
+
+    if iob is not None and iob > 0:
+        pump = PumpStatus(
+            patient_id=patient_id,
+            timestamp=datetime.utcnow(),
+            active_insulin=iob,
+            source=source or "manual",
+        )
+        session.add(pump)
+
+    session.commit()
+    log.info("Saved manual glucose reading: %s mg/dL (trend=%s, source=%s)", sg, trend, source)
 
 
 async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -978,6 +1605,78 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
         elif editing == "ow_key":
             user.openweather_api_key = value
             confirm = "OpenWeather API key salvata." if lang == "it" else "OpenWeather API key saved."
+        elif editing == "sg_manual":
+            # Manual glucose correction entry
+            try:
+                sg_val = float(value.split()[0])
+                pid = _pid(user)
+                _save_glucose_reading(session, pid, sg_val, "FLAT", None, "manual")
+                confirm = msg("sg_saved", lang, value=int(sg_val), trend="FLAT")
+            except (ValueError, IndexError):
+                await update.message.reply_text(msg("sg_invalid", lang))
+                return True
+        elif editing == "whatif_carbs":
+            # What-if meal scenario from button flow
+            try:
+                carbs = float(value.split()[0])
+            except (ValueError, IndexError):
+                await update.message.reply_text(msg("sg_invalid", lang))
+                return True
+            from app.analytics.estimator import predict_trajectory, estimate_bolus as est_bolus
+            pid = _pid(user)
+            trajectory = predict_trajectory(session, carbs_g=carbs)
+            if not trajectory or "error" in trajectory[0]:
+                await update.message.reply_text(msg("no_data", lang, name=_name(user)))
+                return True
+            lines = [f"*What if: {carbs:.0f}g carbs*\n"]
+            for p in trajectory:
+                flag = " ⚠️" if p["predicted_sg"] < 70 or p["predicted_sg"] > 250 else ""
+                lines.append(f"  {p['minutes_ahead']:>3} min: ~{p['predicted_sg']} mg/dL ({p['range_low']}-{p['range_high']}){flag}")
+            suggestion = est_bolus(session, carbs)
+            if "total_suggested_bolus" in suggestion:
+                lines.append(f"\nSuggested bolus: {suggestion['total_suggested_bolus']}U (I:C 1:{suggestion['ic_ratio']:.0f})")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            return True
+        elif editing == "whatif_activity":
+            # What-if activity scenario from button flow
+            import re as _re
+            match = _re.search(r'(cycling|walking|running|gym|swimming|hiking)\s+(\d+)\s*min', value, _re.IGNORECASE)
+            if not match:
+                await update.message.reply_text(msg("whatif_enter_activity", lang))
+                return True
+            from app.analytics.estimator import estimate_activity_impact
+            impact = estimate_activity_impact(session, match.group(1).lower(), int(match.group(2)))
+            if "error" in impact:
+                await update.message.reply_text(msg("no_data", lang, name=_name(user)))
+                return True
+            lines = [
+                f"*What if: {match.group(1)} {match.group(2)}min*\n",
+                f"Estimated drop: ~{impact['estimated_drop']} mg/dL",
+                f"Predicted SG: ~{impact['predicted_sg_end']} mg/dL ({impact['predicted_range']})",
+                f"Risk: {impact['risk_level']}",
+            ]
+            if impact['carbs_recommended_g'] > 0:
+                lines.append(f"Suggested carbs: {impact['carbs_recommended_g']}g")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            return True
+        elif editing == "whatif_bolus":
+            # What-if bolus scenario from button flow
+            try:
+                bolus = float(value.split()[0])
+            except (ValueError, IndexError):
+                await update.message.reply_text(msg("sg_invalid", lang))
+                return True
+            from app.analytics.estimator import predict_trajectory
+            trajectory = predict_trajectory(session, bolus_u=bolus)
+            if not trajectory or "error" in trajectory[0]:
+                await update.message.reply_text(msg("no_data", lang, name=_name(user)))
+                return True
+            lines = [f"*What if: {bolus:.1f}U bolus*\n"]
+            for p in trajectory:
+                flag = " ⚠️" if p["predicted_sg"] < 70 or p["predicted_sg"] > 250 else ""
+                lines.append(f"  {p['minutes_ahead']:>3} min: ~{p['predicted_sg']} mg/dL ({p['range_low']}-{p['range_high']}){flag}")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            return True
 
         session.commit()
 
@@ -1030,7 +1729,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thinking_msg = await update.message.reply_text(msg("thinking", lang))
 
         try:
-            ctx = build_context(session, patient_id=pid)
+            ctx = build_context(session, patient_id=pid, query=user_text)
             system_prompt = build_system_prompt(name, lang, ctx)
 
             # Get recent chat history (last 10 messages) — private per user
@@ -1063,6 +1762,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await thinking_msg.edit_text(response, parse_mode="Markdown")
 
+            # Extract memories in background (non-blocking)
+            import asyncio
+            from app.memory import extract_memories as _extract_memories
+            asyncio.create_task(
+                _extract_memories_safe(pid, user_text, response)
+            )
+
         except Exception as e:
             log.error("Error handling text message: %s", e, exc_info=True)
             err = {"it": "Si è verificato un errore. Riprova.", "en": "An error occurred. Please try again."}
@@ -1073,7 +1779,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photo messages — food analysis with vision AI + own bolus estimation."""
+    """Handle photo messages — food analysis OR device glucose reading extraction."""
     session = get_session()
     try:
         user = await _require_user(update, session)
@@ -1090,12 +1796,24 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo_b64 = base64.b64encode(bytes(photo_bytes)).decode("utf-8")
             caption = update.message.caption or ""
 
-            from app.bot.food import analyze_food_photo
-            response, estimation = await analyze_food_photo(
-                photo_b64, caption, session, _name(user), lang,
-                patient_id=_pid(user), user=user,
-            )
-            await thinking_msg.edit_text(response, parse_mode="Markdown")
+            from app.bot.glucose_reader import is_likely_device_photo, extract_glucose_from_photo
+
+            if is_likely_device_photo(caption):
+                # Device photo — extract glucose reading
+                data = await extract_glucose_from_photo(photo_b64, lang, user=user)
+                if data and data.get("glucose_value"):
+                    await _show_glucose_confirmation(
+                        update, thinking_msg, data, user, lang, session
+                    )
+                else:
+                    # Fallback: try as food photo
+                    await _handle_food_photo(
+                        update, thinking_msg, photo_b64, caption, user, lang, session
+                    )
+            else:
+                await _handle_food_photo(
+                    update, thinking_msg, photo_b64, caption, user, lang, session
+                )
 
         except Exception as e:
             log.error("Error handling photo: %s", e, exc_info=True)
@@ -1104,6 +1822,75 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     finally:
         session.close()
+
+
+async def _handle_food_photo(update, thinking_msg, photo_b64, caption, user, lang, session):
+    """Process a food photo with vision AI."""
+    from app.bot.food import analyze_food_photo
+    response, estimation = await analyze_food_photo(
+        photo_b64, caption, session, _name(user), lang,
+        patient_id=_pid(user), user=user,
+    )
+    await thinking_msg.edit_text(response, parse_mode="Markdown")
+
+
+async def _show_glucose_confirmation(update, thinking_msg, data, user, lang, session):
+    """Show extracted glucose value and ask for confirmation."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    sg = data["glucose_value"]
+    device = data.get("device_type", "unknown")
+    confidence = data.get("confidence", "low")
+    trend = data.get("trend")
+    iob = data.get("iob")
+    notes = data.get("notes", "")
+
+    device_names = {
+        "pump_780g": "Medtronic 780G",
+        "glucometer": "Glucometer",
+        "cgm_receiver": "CGM Receiver",
+    }
+    device_label = device_names.get(device, device)
+
+    lines = [
+        msg("sg_photo_detected", lang),
+        f"*{device_label}*",
+        f"Glucose: *{sg} mg/dL*",
+    ]
+    if trend:
+        lines.append(f"Trend: {trend}")
+    if iob is not None:
+        lines.append(f"IOB: {iob:.1f}U")
+    if confidence != "high":
+        lines.append(f"Confidence: {confidence}")
+    if notes:
+        lines.append(f"_{notes}_")
+
+    # Store data in user context for callback
+    update.message.from_user  # trigger user_data init
+    context_data = update.message.chat_id
+    pid = _pid(user)
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                msg("sg_confirm", lang),
+                callback_data=f"sg_confirm:{sg}:{trend or 'FLAT'}:{iob or 0}:{device}:{pid}"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                msg("sg_correct", lang),
+                callback_data=f"sg_correct:{sg}:{pid}"
+            ),
+        ],
+    ]
+
+    await thinking_msg.edit_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):

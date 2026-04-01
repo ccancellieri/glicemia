@@ -17,8 +17,14 @@ def main_menu(lang: str = "it") -> InlineKeyboardMarkup:
         )])
     rows.extend([
         [InlineKeyboardButton(msg("btn_status", lang), callback_data="status")],
-        [InlineKeyboardButton(msg("btn_food_photo", lang), callback_data="food_photo")],
-        [InlineKeyboardButton(msg("btn_plan_activity", lang), callback_data="plan_activity")],
+        [
+            InlineKeyboardButton(msg("btn_sg_enter", lang), callback_data="sg_enter"),
+            InlineKeyboardButton(msg("btn_food_photo", lang), callback_data="food_photo"),
+        ],
+        [
+            InlineKeyboardButton(msg("btn_whatif", lang), callback_data="whatif_menu"),
+            InlineKeyboardButton(msg("btn_plan_activity", lang), callback_data="plan_activity"),
+        ],
         [
             InlineKeyboardButton(msg("btn_import_csv", lang), callback_data="import_csv"),
             InlineKeyboardButton(msg("btn_import_health", lang), callback_data="import_health"),
@@ -98,3 +104,58 @@ def confirm_cancel_menu(lang: str = "it") -> InlineKeyboardMarkup:
             InlineKeyboardButton(msg("btn_cancel", lang), callback_data="cancel"),
         ],
     ])
+
+
+def glucose_range_menu(lang: str = "it") -> InlineKeyboardMarkup:
+    """Step 1: select a glucose range bucket."""
+    ranges = [
+        ("< 70", "sg_range:40:70"),
+        ("70–120", "sg_range:70:120"),
+        ("120–180", "sg_range:120:180"),
+        ("180–250", "sg_range:180:250"),
+        ("> 250", "sg_range:250:400"),
+    ]
+    rows = [[InlineKeyboardButton(label, callback_data=cb)] for label, cb in ranges]
+    rows.append([InlineKeyboardButton(msg("btn_back", lang), callback_data="main_menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def glucose_value_menu(low: int, high: int, lang: str = "it") -> InlineKeyboardMarkup:
+    """Step 2: pick an exact value within the selected range."""
+    step = 5 if (high - low) <= 60 else 10
+    row, rows = [], []
+    for v in range(low, high + 1, step):
+        row.append(InlineKeyboardButton(str(v), callback_data=f"sg_val:{v}"))
+        if len(row) >= 5:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(msg("btn_back", lang), callback_data="sg_enter")])
+    return InlineKeyboardMarkup(rows)
+
+
+def glucose_trend_menu(sg_value: int, lang: str = "it") -> InlineKeyboardMarkup:
+    """Step 3: select the trend arrow direction."""
+    trends = [
+        ("⬆⬆ " + msg("btn_trend_up_fast", lang), f"sg_trend:{sg_value}:UP_FAST"),
+        ("⬆ " + msg("btn_trend_up", lang), f"sg_trend:{sg_value}:UP"),
+        ("➡ " + msg("btn_trend_flat", lang), f"sg_trend:{sg_value}:FLAT"),
+        ("⬇ " + msg("btn_trend_down", lang), f"sg_trend:{sg_value}:DOWN"),
+        ("⬇⬇ " + msg("btn_trend_down_fast", lang), f"sg_trend:{sg_value}:DOWN_FAST"),
+    ]
+    rows = [[InlineKeyboardButton(label, callback_data=cb)] for label, cb in trends]
+    rows.append([InlineKeyboardButton(msg("btn_back", lang), callback_data="sg_enter")])
+    return InlineKeyboardMarkup(rows)
+
+
+def glucose_whatif_menu(lang: str = "it") -> InlineKeyboardMarkup:
+    """What-if scenario quick buttons."""
+    scenarios = [
+        (msg("btn_whatif_meal", lang), "whatif_meal"),
+        (msg("btn_whatif_activity", lang), "whatif_activity"),
+        (msg("btn_whatif_bolus", lang), "whatif_bolus"),
+    ]
+    rows = [[InlineKeyboardButton(label, callback_data=cb)] for label, cb in scenarios]
+    rows.append([InlineKeyboardButton(msg("btn_back", lang), callback_data="main_menu")])
+    return InlineKeyboardMarkup(rows)

@@ -35,7 +35,7 @@ edge-tts>=6.1.0
 # Environment
 python-dotenv>=1.0
 
-# Legacy CSV analyzer (main.py) and Excel/PDF report generators
+# Legacy CSV analyzer and Excel/PDF report generators
 pandas>=2.0
 numpy>=1.24
 openpyxl>=3.1

@@ -30,7 +30,9 @@ async def create_webapp_server():
     app = web.Application()
 
     # CORS middleware for Telegram WebApp
-    allowed_origin = settings.WEBAPP_URL.rstrip("/") if settings.WEBAPP_URL else "*"
+    # No WEBAPP_URL configured -> no CORS headers at all (same-origin requests
+    # are unaffected; only cross-origin callers need Access-Control-Allow-Origin).
+    allowed_origin = settings.WEBAPP_URL.rstrip("/") if settings.WEBAPP_URL else None
 
     @web.middleware
     async def cors_middleware(request, handler):
@@ -38,9 +40,10 @@ async def create_webapp_server():
             resp = web.Response()
         else:
             resp = await handler(request)
-        resp.headers["Access-Control-Allow-Origin"] = allowed_origin
-        resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        if allowed_origin:
+            resp.headers["Access-Control-Allow-Origin"] = allowed_origin
+            resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         return resp
 
     app.middlewares.append(cors_middleware)
@@ -55,7 +58,7 @@ async def create_webapp_server():
     runner = web.AppRunner(app)
     await runner.setup()
     port = settings.WEBAPP_PORT
-    bind_host = os.getenv("WEBAPP_BIND_HOST", "127.0.0.1")
+    bind_host = settings.WEBAPP_BIND_HOST
     site = web.TCPSite(runner, bind_host, port)
     await site.start()
     log.info("WebApp server started on http://%s:%d/webapp", bind_host, port)

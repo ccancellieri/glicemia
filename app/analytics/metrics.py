@@ -1,6 +1,6 @@
 """GliceMia metrics — TIR, GMI, CV, hypo analysis, time-slot patterns.
 
-Adapted from the original analyze.py and main.py analysis functions.
+Adapted from the original CSV-based analyzer and CLI entry point.
 Works against the SQLAlchemy database instead of CSV files.
 """
 

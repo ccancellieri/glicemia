@@ -37,9 +37,10 @@
 ### Passo 4: Installa le dipendenze
 
 ```bash
-cd /Users/ccancellieri/work/code/diabete
+cd /path/to/glicemia
+python3 -m venv venv
 source venv/bin/activate
-pip install python-dotenv sqlalchemy "python-telegram-bot>=21.0" litellm matplotlib
+pip install -r requirements.txt
 ```
 
 ### Passo 5: Configura il file `.env`
@@ -164,9 +165,10 @@ python agent.py
 ### Step 4: Install dependencies
 
 ```bash
-cd /Users/ccancellieri/work/code/diabete
+cd /path/to/glicemia
+python3 -m venv venv
 source venv/bin/activate
-pip install python-dotenv sqlalchemy "python-telegram-bot>=21.0" litellm matplotlib
+pip install -r requirements.txt
 ```
 
 ### Step 5: Configure `.env`
@@ -290,9 +292,10 @@ python agent.py
 ### Paso 4: Instala las dependencias
 
 ```bash
-cd /Users/ccancellieri/work/code/diabete
+cd /path/to/glicemia
+python3 -m venv venv
 source venv/bin/activate
-pip install python-dotenv sqlalchemy "python-telegram-bot>=21.0" litellm matplotlib
+pip install -r requirements.txt
 ```
 
 ### Paso 5: Configura el archivo `.env`
@@ -416,9 +419,10 @@ python agent.py
 ### Etape 4 : Installer les dependances
 
 ```bash
-cd /Users/ccancellieri/work/code/diabete
+cd /path/to/glicemia
+python3 -m venv venv
 source venv/bin/activate
-pip install python-dotenv sqlalchemy "python-telegram-bot>=21.0" litellm matplotlib
+pip install -r requirements.txt
 ```
 
 ### Etape 5 : Configurer le fichier `.env`

@@ -61,8 +61,9 @@ GliceMia is a personal diabetes management assistant for people with Type 1 Diab
 
 ```bash
 # 1. Install dependencies
+python3 -m venv venv
 source venv/bin/activate
-pip install python-dotenv sqlalchemy "python-telegram-bot>=21.0" litellm matplotlib aiohttp
+pip install -r requirements.txt
 
 # 2. Configure
 cp .env.example .env
@@ -217,6 +218,7 @@ GEMINI_API_KEY=...         # Free at ai.google.dev
 | Gemini 2.5 Flash | `AI_MODEL=gemini/gemini-2.5-flash` | Free |
 | Gemini 2.5 Pro | `AI_MODEL=gemini/gemini-2.5-pro` | Free (limited) |
 | Claude Sonnet | `AI_MODEL=anthropic/claude-sonnet-4-20250514` | Paid |
+| Claude Haiku | `AI_MODEL=anthropic/claude-haiku-4-5-20251001` | Paid |
 | Ollama (local) | `AI_MODEL=ollama/llama3` | Free |
 | GPT-4o | `AI_MODEL=openai/gpt-4o` | Paid |
 

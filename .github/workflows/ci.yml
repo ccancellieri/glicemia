@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    env:
+      DB_PATH: ./ci.db
+      DB_PASSPHRASE: ci-test
+      TELEGRAM_ALLOWED_USERS: "1"
+      TELEGRAM_BOT_TOKEN: ""
+      GEMINI_API_KEY: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # sqlcipher3 (app/database.py) builds a C extension against the
+      # system SQLCipher library -- no prebuilt Linux wheel on PyPI.
+      - name: Install SQLCipher system library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlcipher-dev
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile check
+        run: python -m compileall -q agent.py app scripts
+
+      - name: Import smoke test
+        run: python scripts/ci_smoke.py
+
+      - name: Seed demo data
+        run: python scripts/seed_demo.py
+
+      - name: Generate synthetic CGM data
+        run: python scripts/gen_synthetic.py
+
+      - name: Run component tests
+        run: python scripts/test_demo.py

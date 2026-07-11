@@ -1547,7 +1547,8 @@ def _save_glucose_reading(session, patient_id, sg, trend, iob, source):
         session.add(pump)
 
     session.commit()
-    log.info("Saved manual glucose reading: %s mg/dL (trend=%s, source=%s)", sg, trend, source)
+    log.info("Saved manual glucose reading (source=%s, patient=%d)", source, patient_id)
+    log.debug("Saved manual glucose reading: %s mg/dL (trend=%s, source=%s)", sg, trend, source)
 
 
 async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:

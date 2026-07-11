@@ -186,7 +186,13 @@ def create_mcp_server():
                 compute_metrics, analyze_hypo_episodes,
                 est_bolus, pred_glucose, get_current_state,
             )
-            return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+            text = json.dumps(result, default=str, indent=2)
+            if isinstance(result, dict) and result.get("stale_data"):
+                text = (
+                    f"NOTE: CGM data is {result['data_age_minutes']} minutes old "
+                    "— this estimate may be unreliable.\n\n" + text
+                )
+            return [TextContent(type="text", text=text)]
         finally:
             session.close()
 

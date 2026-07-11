@@ -47,6 +47,9 @@ def get_current_state(session: Session, patient_id: int = None) -> Optional[dict
         pq = pq.filter(PumpStatus.patient_id == patient_id)
     pump = pq.order_by(PumpStatus.timestamp.desc()).first()
 
+    # Same idiom as the alerts engine's sensor_gap check (app/alerts/engine.py).
+    data_age_minutes = (datetime.utcnow() - reading.timestamp).total_seconds() / 60
+
     return {
         "sg": reading.sg,
         "trend": reading.trend or "FLAT",
@@ -54,6 +57,10 @@ def get_current_state(session: Session, patient_id: int = None) -> Optional[dict
         "iob": pump.active_insulin if pump else 0,
         "basal_rate": pump.basal_rate if pump else 0,
         "auto_mode": pump.auto_mode if pump else "UNKNOWN",
+        "data_age_minutes": round(data_age_minutes),
+        # Raw age for threshold checks — rounding would let e.g. 15.3 min
+        # slip under the > 15 gate the alerts engine already fires on.
+        "_data_age_raw": data_age_minutes,
     }
 
 
@@ -164,7 +171,7 @@ def predict_glucose(
         except Exception as e:
             log.debug("Failed to log prediction: %s", e)
 
-    return {
+    result = {
         "current_sg": round(sg),
         "predicted_sg": round(predicted),
         "range_low": round(range_low),
@@ -176,7 +183,11 @@ def predict_glucose(
         "carb_contribution": round(carb_delta, 1),
         "pattern_adjustment": round(pattern_adj, 1),
         "iob_current": round(iob, 2),
+        "data_age_minutes": state["data_age_minutes"],
     }
+    if state["_data_age_raw"] > 15:
+        result["stale_data"] = True
+    return result
 
 
 def estimate_bolus(
@@ -226,7 +237,7 @@ def estimate_bolus(
             "My estimate is for the food bolus only."
         )
 
-    return {
+    result = {
         "current_sg": round(sg),
         "carbs_g": round(carbs_g),
         "ic_ratio": ic_ratio,
@@ -240,7 +251,11 @@ def estimate_bolus(
         "predicted_range": f"{prediction.get('range_low')}-{prediction.get('range_high')}",
         "auto_mode_note": auto_mode_note,
         "settings_source": settings["source"],
+        "data_age_minutes": state["data_age_minutes"],
     }
+    if state["_data_age_raw"] > 15:
+        result["stale_data"] = True
+    return result
 
 
 def estimate_activity_impact(
@@ -305,7 +320,7 @@ def estimate_activity_impact(
     if predicted_end < 90:
         carbs_needed = max(0, (90 - predicted_end) / 3.5)
 
-    return {
+    result = {
         "current_sg": round(sg),
         "activity_type": activity_type,
         "duration_min": duration_min,
@@ -317,7 +332,11 @@ def estimate_activity_impact(
         "risk_level": risk,
         "carbs_recommended_g": round(carbs_needed),
         "historical_data_used": historical_avg is not None,
+        "data_age_minutes": state["data_age_minutes"],
     }
+    if state["_data_age_raw"] > 15:
+        result["stale_data"] = True
+    return result
 
 
 def predict_trajectory(

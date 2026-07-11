@@ -18,6 +18,7 @@ from app.ai.system_prompt import build_system_prompt
 from app.ai.context import build_context
 from app.analytics.estimator import estimate_bolus, get_current_state, get_insulin_settings
 from app.config import settings
+from app.i18n.messages import msg
 from app.models import Meal
 
 log = logging.getLogger(__name__)
@@ -218,4 +219,6 @@ def _format_own_estimation(est: dict, lang: str) -> str:
     result = template.format(**est)
     if note:
         result += f"_{note}_\n"
+    if est.get("stale_data"):
+        result += f"\n{msg('stale_data_warning', lang, minutes=est.get('data_age_minutes'))}\n"
     return result

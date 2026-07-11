@@ -612,6 +612,14 @@ MESSAGES = {
         "es": "Uso: /whatif <escenario>\n\nEjemplos:\n/whatif 80g pasta\n/whatif cycling 60min\n/whatif 50g carbs + 3U bolus",
         "fr": "Utilisation: /whatif <scénario>\n\nExemples:\n/whatif 80g pâtes\n/whatif cycling 60min\n/whatif 50g carbs + 3U bolus",
     },
+
+    # --- Data staleness ---
+    "stale_data_warning": {
+        "it": "⚠️ Il dato del sensore ha {minutes} minuti — la stima potrebbe non essere affidabile.",
+        "en": "⚠️ Sensor data is {minutes} minutes old — this estimate may be unreliable.",
+        "es": "⚠️ El dato del sensor tiene {minutes} minutos — la estimación podría no ser fiable.",
+        "fr": "⚠️ La donnée du capteur a {minutes} minutes — l'estimation peut être peu fiable.",
+    },
 }
 
 

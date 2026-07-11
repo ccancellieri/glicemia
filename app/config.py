@@ -53,6 +53,9 @@ class Settings:
     WEBAPP_URL: str = os.getenv("WEBAPP_URL", "")
     WEBAPP_BIND_HOST: str = os.getenv("WEBAPP_BIND_HOST", "127.0.0.1")
 
+    # MCP server (Claude Desktop) — bind to one patient in multi-patient DBs
+    MCP_PATIENT_ID: int = int(os.getenv("MCP_PATIENT_ID", "0"))
+
     # TTS (Text-to-Speech for voice replies)
     TTS_MODEL: str = os.getenv("TTS_MODEL", "")
 

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from aiohttp import web
 
@@ -16,6 +16,7 @@ from app.models import (
 from app.analytics.metrics import compute_metrics, time_slot_analysis
 from app.webapp.auth import validate_init_data
 from app.users import get_user
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def _json(data, ok=True):
     return web.json_response({
         "ok": ok,
         "data": data,
-        "ts": datetime.utcnow().isoformat() + "Z",
+        "ts": utcnow().isoformat() + "Z",
     }, dumps=lambda x: json.dumps(x, default=str))
 
 
@@ -55,7 +56,7 @@ async def get_status(request):
             return _err("unauthorized", 403)
         pid = user.telegram_user_id
 
-        now = datetime.utcnow()
+        now = utcnow()
 
         latest_sg = (
             session.query(GlucoseReading)
@@ -148,7 +149,7 @@ async def get_readings(request):
         pid = user.telegram_user_id
 
         hours = min(int(request.query.get("hours", "24")), 720)
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = utcnow() - timedelta(hours=hours)
         readings = (
             session.query(GlucoseReading)
             .filter(
@@ -183,7 +184,7 @@ async def get_metrics(request):
         period_map = {"today": 1, "week": 7, "month": 30, "3month": 90}
         days = period_map.get(period, 7)
 
-        now = datetime.utcnow()
+        now = utcnow()
         start = now - timedelta(days=days)
         metrics = compute_metrics(session, start, now, patient_id=pid)
         slots = time_slot_analysis(session, start, now, patient_id=pid)
@@ -232,7 +233,7 @@ async def get_boluses(request):
         pid = user.telegram_user_id
 
         hours = int(request.query.get("hours", "24"))
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = utcnow() - timedelta(hours=hours)
         boluses = (
             session.query(BolusEvent)
             .filter(BolusEvent.patient_id == pid, BolusEvent.timestamp >= since)
@@ -264,7 +265,7 @@ async def get_meals(request):
         pid = user.telegram_user_id
 
         hours = int(request.query.get("hours", "48"))
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = utcnow() - timedelta(hours=hours)
         meals = (
             session.query(Meal)
             .filter(Meal.patient_id == pid, Meal.timestamp >= since)
@@ -295,7 +296,7 @@ async def get_activities(request):
         pid = user.telegram_user_id
 
         days = int(request.query.get("days", "30"))
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
         activities = (
             session.query(Activity)
             .filter(Activity.patient_id == pid, Activity.timestamp_start >= since)

@@ -12,6 +12,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import GlucoseReading, PumpStatus, GlucosePattern
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -68,14 +69,14 @@ class Alert:
         self.predicted_sg = predicted_sg
         self.minutes_to_event = minutes_to_event
         self.details = details or {}
-        self.timestamp = datetime.utcnow()
+        self.timestamp = utcnow()
 
 
 def check_alerts(session: Session, patient_id: int = None, now: datetime = None) -> list[Alert]:
     """Run all alert checks against one patient's current data.
 
     Returns list of triggered alerts."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     alerts = []
 
     # Get latest reading

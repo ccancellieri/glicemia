@@ -15,6 +15,7 @@ from app.models import (
     InsulinSetting, Activity, GlucosePattern, HealthRecord,
     TripPlan, ChatMessage, LiabilityWaiver,
 )
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def record_consent(
         telegram_user_id=telegram_user_id,
         purpose=purpose,
         granted=granted,
-        timestamp=datetime.utcnow(),
+        timestamp=utcnow(),
         privacy_policy_version=policy_version,
         language=language,
     )
@@ -124,7 +125,7 @@ def export_user_data(session: Session, telegram_user_id: int) -> dict:
     profile = session.query(PatientProfile).filter_by(patient_id=telegram_user_id).first()
 
     data = {
-        "export_date": datetime.utcnow().isoformat(),
+        "export_date": utcnow().isoformat(),
         "format_version": "1.0",
         "account": {
             "telegram_user_id": user.telegram_user_id,
@@ -225,7 +226,7 @@ def apply_retention_policies(session: Session) -> dict:
 
     Run periodically (e.g., daily via scheduler).
     """
-    now = datetime.utcnow()
+    now = utcnow()
     cleaned = {}
 
     # Chat messages older than retention period

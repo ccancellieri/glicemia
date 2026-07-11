@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import GlucoseReading
 from app.analytics.metrics import compute_metrics, time_slot_analysis
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def generate_report(
     Returns:
         (text_report, chart_png_bytes or None)
     """
-    now = datetime.utcnow()
+    now = utcnow()
     period_map = {
         "today": timedelta(days=1),
         "week": timedelta(days=7),

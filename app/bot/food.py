@@ -8,7 +8,6 @@ Always shows final predicted glucose values.
 import base64
 import json
 import logging
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -20,6 +19,7 @@ from app.analytics.estimator import estimate_bolus, get_current_state, get_insul
 from app.config import settings
 from app.i18n.messages import msg
 from app.models import Meal
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ async def analyze_food_photo(
         # Save meal to DB
         session.add(Meal(
             patient_id=patient_id,
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow(),
             carbs_g=carbs_estimate,
             description=caption or "Photo analysis",
             ai_estimation=json.dumps(own_estimation, default=str),

@@ -5,12 +5,12 @@ and provides condition context for AI interactions.
 """
 
 import logging
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.models import Condition, Observation
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ def add_condition(
     if existing:
         existing.clinical_status = "active"
         existing.severity = severity
-        existing.last_updated = datetime.utcnow()
+        existing.last_updated = utcnow()
         if notes:
             existing.notes = notes
         session.commit()
@@ -138,7 +138,7 @@ def update_conditions_from_labs(session: Session, patient_id: int = None):
                 t1d.severity = "moderate"
             else:
                 t1d.severity = "mild"
-            t1d.last_updated = datetime.utcnow()
+            t1d.last_updated = utcnow()
 
     # DEXA T-score → osteoporosis severity
     dexa = _obs("80948-3")
@@ -153,7 +153,7 @@ def update_conditions_from_labs(session: Session, patient_id: int = None):
                 osteo.clinical_status = "active"
             else:
                 osteo.clinical_status = "resolved"
-            osteo.last_updated = datetime.utcnow()
+            osteo.last_updated = utcnow()
 
     # TSH → hypothyroidism
     tsh = _obs("3016-3")

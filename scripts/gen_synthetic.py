@@ -24,6 +24,7 @@ from app.database import init_db, get_session
 from app.models import GlucoseReading, BolusEvent, Meal, GlucosePattern
 from app.analytics.patterns import compute_all_patterns
 from app.config import settings
+from app.timeutils import utcnow
 
 PATIENT_ID = (
     settings.TELEGRAM_ALLOWED_USERS[0] if settings.TELEGRAM_ALLOWED_USERS else 1
@@ -88,7 +89,7 @@ def main():
         print(f"Synthetic glucose data already present ({existing} readings) -- skipping generation")
     else:
         rng = random.Random(42)  # deterministic, reproducible synthetic data
-        now = datetime.utcnow()
+        now = utcnow()
 
         readings = _generate_glucose_readings(now, rng)
         for ts, sg in readings:

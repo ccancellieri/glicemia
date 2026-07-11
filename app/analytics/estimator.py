@@ -15,6 +15,7 @@ from app.models import (
     GlucoseReading, PumpStatus, InsulinSetting,
     GlucosePattern, Activity,
 )
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def get_current_state(session: Session, patient_id: int = None) -> Optional[dict
     pump = pq.order_by(PumpStatus.timestamp.desc()).first()
 
     # Same idiom as the alerts engine's sensor_gap check (app/alerts/engine.py).
-    data_age_minutes = (datetime.utcnow() - reading.timestamp).total_seconds() / 60
+    data_age_minutes = (utcnow() - reading.timestamp).total_seconds() / 60
 
     return {
         "sg": reading.sg,
@@ -66,7 +67,7 @@ def get_current_state(session: Session, patient_id: int = None) -> Optional[dict
 
 def get_insulin_settings(session: Session, now: datetime = None, patient_id: int = None) -> dict:
     """Get the current I:C ratio and ISF for the current time of day."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     hour = now.strftime("%H:00")
 
     sq = session.query(InsulinSetting).filter(InsulinSetting.time_start <= hour)
@@ -476,7 +477,7 @@ def _historical_activity_delta(
     patient_id: int = None,
 ) -> Optional[float]:
     """Get average glucose delta from similar past activities."""
-    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+    cutoff = utcnow() - timedelta(days=lookback_days)
     aq = (
         session.query(Activity)
         .filter(

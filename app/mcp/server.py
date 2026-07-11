@@ -12,7 +12,6 @@ unless the bound patient is unambiguous.
 
 import json
 import logging
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -25,9 +24,10 @@ def _resolve_patient_id(session) -> int:
     Priority: MCP_PATIENT_ID env var; else the sole active UserAccount if
     there's exactly one; otherwise refuse to start.
     """
-    env_pid = os.getenv("MCP_PATIENT_ID")
-    if env_pid:
-        return int(env_pid)
+    from app.config import settings
+
+    if settings.MCP_PATIENT_ID:
+        return settings.MCP_PATIENT_ID
 
     from app.users import get_all_active_users
 

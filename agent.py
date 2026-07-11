@@ -170,8 +170,8 @@ async def _start_pattern_scheduler():
     async def daily_patterns():
         while True:
             await asyncio.sleep(3600)
-            from datetime import datetime
-            now = datetime.utcnow()
+            from app.timeutils import utcnow
+            now = utcnow()
             if now.hour == 4 and now.minute < 5:
                 log.info("Running daily pattern computation...")
                 compute_for_all()

@@ -3,8 +3,6 @@
 import base64
 import json
 import logging
-from datetime import datetime
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -25,6 +23,7 @@ from app.bot.menus import (
 from app.bot.formatters import format_status, format_csv_import_result
 from app.i18n.messages import msg
 from app.carelink.csv_import import import_carelink_csv_bytes
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -973,7 +972,7 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Current state: {state_desc}\n"
                 f"Analyze the scenario and predict glucose trajectory at 30 and 60 min."
             )
-            ctx = build_context(session, patient_id=pid, now=datetime.utcnow(), query=raw)
+            ctx = build_context(session, patient_id=pid, now=utcnow(), query=raw)
             system = build_system_prompt(_name(user), lang, ctx)
             response = await ai_chat([
                 {"role": "system", "content": system},
@@ -1535,7 +1534,7 @@ def _save_glucose_reading(session, patient_id, sg, trend, iob, source):
     """Save a manually entered or photo-extracted glucose reading."""
     reading = GlucoseReading(
         patient_id=patient_id,
-        timestamp=datetime.utcnow(),
+        timestamp=utcnow(),
         sg=sg,
         trend=trend,
         source=source or "manual",
@@ -1545,7 +1544,7 @@ def _save_glucose_reading(session, patient_id, sg, trend, iob, source):
     if iob is not None and iob > 0:
         pump = PumpStatus(
             patient_id=patient_id,
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow(),
             active_insulin=iob,
             source=source or "manual",
         )

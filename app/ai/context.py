@@ -17,6 +17,7 @@ from app.models import (
     PatientProfile, HealthRecord,
 )
 from app.memory import build_memory_context
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def build_context(
     """Build the full 13-layer context string for AI system prompt injection.
     All queries are scoped to the given patient_id.
     Layer 13 injects per-user memories learned from previous conversations."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     pid = patient_id
     layers = [
         _layer_narrative_summary(session, now, pid),

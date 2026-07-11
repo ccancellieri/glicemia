@@ -6,12 +6,12 @@ Stores GPS tracks, glucose deltas, and enriches with weather data.
 
 import json
 import logging
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.models import Activity, GlucoseReading, TripPlan
+from app.timeutils import utcnow
 from app.activity.calories import estimate_calories, infer_intensity
 from app.activity.weather import get_current_weather
 from app.analytics.estimator import estimate_activity_impact, get_current_state
@@ -108,7 +108,7 @@ async def start_activity(session: Session, plan_id: int, patient_id: int = None)
 
     activity = Activity(
         patient_id=pid,
-        timestamp_start=datetime.utcnow(),
+        timestamp_start=utcnow(),
         activity_type=plan.activity_type,
         distance_km=plan.distance_km,
         elevation_gain_m=plan.distance_km,  # Will be updated on completion
@@ -132,7 +132,7 @@ async def complete_activity(
     if not activity:
         return None
 
-    activity.timestamp_end = datetime.utcnow()
+    activity.timestamp_end = utcnow()
     if activity.timestamp_start:
         delta = (activity.timestamp_end - activity.timestamp_start).total_seconds()
         activity.duration_min = int(delta / 60)

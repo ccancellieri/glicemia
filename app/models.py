@@ -4,7 +4,7 @@ All tables use SQLAlchemy ORM. The database is encrypted with SQLCipher (AES-256
 Geospatial columns (GPS tracks) use SpatiaLite when available.
 """
 
-from datetime import datetime, date
+from datetime import date
 
 from sqlalchemy import (
     Column, Integer, Float, Text, DateTime, Date, Boolean, String,
@@ -13,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
 from app.crypto import EncryptedText
+from app.timeutils import utcnow
 
 
 class Base(DeclarativeBase):
@@ -65,8 +66,8 @@ class UserAccount(Base):
     token_reset_date = Column(Date)       # last daily reset
     token_reset_month = Column(Date)      # last monthly reset
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     # Relationships
     profile = relationship("PatientProfile", back_populates="user", uselist=False)
@@ -103,7 +104,7 @@ class PatientProfile(Base):
     sensor_model = Column(Text)
     diet = Column(Text)  # vegetarian, vegan, etc.
     language = Column(String(5), default="it")
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     user = relationship("UserAccount", back_populates="profile")
 
@@ -195,8 +196,8 @@ class Condition(Base):
     verification_status = Column(Text, default="confirmed")
     severity = Column(Text)  # mild, moderate, severe
     onset_date = Column(Date)
-    recorded_date = Column(DateTime, default=datetime.utcnow)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    recorded_date = Column(DateTime, default=utcnow)
+    last_updated = Column(DateTime, default=utcnow, onupdate=utcnow)
     body_site = Column(Text)
     evidence_json = Column(Text)
     notes = Column(Text)
@@ -239,7 +240,7 @@ class InsulinSetting(Base):
     isf = Column(Float)  # Insulin Sensitivity Factor (mg/dL/U)
     target_sg = Column(Float, default=120.0)
     source = Column(Text, default="carelink")  # carelink, learned, manual
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     user = relationship("UserAccount", back_populates="insulin_settings")
 
@@ -294,7 +295,7 @@ class GlucosePattern(Base):
     avg_iob = Column(Float)
     avg_carbs = Column(Float)
     sample_count = Column(Integer)
-    computed_at = Column(DateTime, default=datetime.utcnow)
+    computed_at = Column(DateTime, default=utcnow)
 
     user = relationship("UserAccount", back_populates="glucose_patterns")
 
@@ -330,7 +331,7 @@ class TripPlan(Base):
 
     id = Column(Integer, primary_key=True)
     patient_id = Column(Integer, ForeignKey("user_accounts.telegram_user_id"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     description = Column(Text)
     route_json = Column(Text)  # GeoJSON
     distance_km = Column(Float)
@@ -354,7 +355,7 @@ class LiabilityWaiver(Base):
 
     id = Column(Integer, primary_key=True)
     telegram_user_id = Column(Integer, nullable=False, unique=True)
-    accepted_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    accepted_at = Column(DateTime, nullable=False, default=utcnow)
     language = Column(String(5))
     version = Column(Text, default="1.0")
 
@@ -372,7 +373,7 @@ class GDPRConsent(Base):
     telegram_user_id = Column(Integer, ForeignKey("user_accounts.telegram_user_id"), nullable=False, index=True)
     purpose = Column(Text, nullable=False)       # health_data, ai_processing, ai_external, analytics
     granted = Column(Boolean, nullable=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = Column(DateTime, nullable=False, default=utcnow)
     privacy_policy_version = Column(Text, default="1.0")
     language = Column(String(5))
 
@@ -401,8 +402,8 @@ class UserMemory(Base):
     content = Column(Text, nullable=False)       # The memory itself (natural language)
     importance = Column(Integer, default=5)       # 1-10 importance score (AI-assigned)
     source_summary = Column(Text)                 # Brief context of the conversation that produced this
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_accessed = Column(DateTime, default=datetime.utcnow)  # Updated when injected into context
+    created_at = Column(DateTime, default=utcnow)
+    last_accessed = Column(DateTime, default=utcnow)  # Updated when injected into context
     access_count = Column(Integer, default=0)     # How many times used in context
     is_active = Column(Boolean, default=True)     # False = consolidated/archived
     consolidated_into = Column(Integer, ForeignKey("user_memories.id"))  # Points to the consolidated memory
@@ -422,7 +423,7 @@ class ChatMessage(Base):
 
     id = Column(Integer, primary_key=True)
     patient_id = Column(Integer, ForeignKey("user_accounts.telegram_user_id"), nullable=False, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=utcnow, index=True)
     platform = Column(Text, default="telegram")
     role = Column(Text, nullable=False)  # user, assistant
     content = Column(Text, nullable=False)

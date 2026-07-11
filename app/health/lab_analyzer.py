@@ -7,13 +7,13 @@ Automatically detects out-of-range values and updates conditions.
 import base64
 import json
 import logging
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.ai.llm import chat_with_vision, chat as ai_chat
 from app.models import Observation, Condition
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def _store_observation(result: dict, session: Session, patient_id: int = None):
     existing = session.query(Observation).filter_by(
         patient_id=patient_id,
         display_name=result.get("test_name"),
-        effective_date=datetime.utcnow().replace(hour=0, minute=0, second=0),
+        effective_date=utcnow().replace(hour=0, minute=0, second=0),
         source="lab_photo",
     ).first()
 
@@ -173,7 +173,7 @@ def _store_observation(result: dict, session: Session, patient_id: int = None):
             reference_range_low=result.get("ref_low"),
             reference_range_high=result.get("ref_high"),
             interpretation=result.get("interpretation"),
-            effective_date=datetime.utcnow(),
+            effective_date=utcnow(),
             source="lab_photo",
             performer="lab",
         ))

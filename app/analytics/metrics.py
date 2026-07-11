@@ -12,6 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import GlucoseReading, BolusEvent, Meal, PredictionLog
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -380,7 +381,7 @@ def compute_prediction_accuracy(
 
     Returns dict keyed by horizon_min with accuracy metrics.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow() - timedelta(days=days)
     q = session.query(PredictionLog).filter(
         PredictionLog.reconciled == True,  # noqa: E712
         PredictionLog.actual_sg.isnot(None),

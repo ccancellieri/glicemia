@@ -9,13 +9,14 @@ Daily consolidation merges old/redundant memories and prunes low-value ones.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import UserMemory, ChatMessage, UserAccount
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ def get_relevant_memories(
     if not memories:
         return []
 
-    now = datetime.utcnow()
+    now = utcnow()
     scored = []
     for mem in memories:
         age_days = max((now - mem.created_at).days, 1)
@@ -262,7 +263,7 @@ async def consolidate_memories(session: Session, patient_id: int) -> dict:
     stats = {"pruned": 0, "consolidated": 0, "remaining": 0}
 
     # Step 1: Prune old, low-importance memories
-    cutoff = datetime.utcnow() - timedelta(days=7)
+    cutoff = utcnow() - timedelta(days=7)
     pruned = (
         session.query(UserMemory)
         .filter(

@@ -12,8 +12,10 @@ unless the bound patient is unambiguous.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
+
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -207,7 +209,7 @@ def _handle_tool(
     est_bolus, pred_glucose, get_current_state,
 ):
     """Dispatch tool calls to the appropriate handler, scoped to patient_id."""
-    now = datetime.utcnow()
+    now = utcnow()
 
     if name == "get_status":
         state = get_current_state(session, patient_id=patient_id)

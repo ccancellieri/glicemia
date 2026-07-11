@@ -12,6 +12,7 @@ from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from app.models import GlucoseReading, GlucosePattern, BolusEvent, Meal
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ LOW = 70
 
 def compute_all_patterns(session: Session, patient_id: int = None, now: datetime = None):
     """Compute all pattern types for one patient and upsert into glucose_patterns."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
 
     log.info("Computing glucose patterns (patient=%s)...", patient_id)
     _compute_hourly(session, now, patient_id)
@@ -46,7 +47,7 @@ def _upsert_pattern(session: Session, patient_id: int, period_type: str, period_
         existing.avg_iob = stats.get("avg_iob")
         existing.avg_carbs = stats.get("avg_carbs")
         existing.sample_count = stats["sample_count"]
-        existing.computed_at = datetime.utcnow()
+        existing.computed_at = utcnow()
     else:
         session.add(GlucosePattern(
             patient_id=patient_id,

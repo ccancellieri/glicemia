@@ -8,6 +8,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Condition, Observation, HealthRecord
+from app.timeutils import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ class FHIRClient:
                 unit = value_quantity.get("unit", "")
 
                 effective = resource.get("effectiveDateTime")
-                effective_dt = _parse_fhir_date(effective) if effective else datetime.utcnow()
+                effective_dt = _parse_fhir_date(effective) if effective else utcnow()
 
                 ref_range = resource.get("referenceRange", [{}])[0]
                 ref_low = ref_range.get("low", {}).get("value")

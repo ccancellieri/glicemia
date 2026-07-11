@@ -907,6 +907,8 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             if impact['carbs_recommended_g'] > 0:
                 lines.append(f"Suggested carbs before: {impact['carbs_recommended_g']}g")
+            if impact.get("stale_data"):
+                lines.append(f"\n{msg('stale_data_warning', lang, minutes=impact['data_age_minutes'])}")
 
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
         elif carbs_g > 0 or bolus_u > 0:
@@ -953,6 +955,9 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"\nSuggested bolus: {suggestion['total_suggested_bolus']}U "
                         f"(I:C 1:{suggestion['ic_ratio']:.0f})"
                     )
+
+            if trajectory[0].get("stale_data"):
+                lines.append(f"\n{msg('stale_data_warning', lang, minutes=trajectory[0]['data_age_minutes'])}")
 
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
         else:
@@ -1639,6 +1644,8 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
             suggestion = est_bolus(session, carbs, patient_id=pid)
             if "total_suggested_bolus" in suggestion:
                 lines.append(f"\nSuggested bolus: {suggestion['total_suggested_bolus']}U (I:C 1:{suggestion['ic_ratio']:.0f})")
+            if trajectory[0].get("stale_data"):
+                lines.append(f"\n{msg('stale_data_warning', lang, minutes=trajectory[0]['data_age_minutes'])}")
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             return True
         elif editing == "whatif_activity":
@@ -1664,6 +1671,8 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
             ]
             if impact['carbs_recommended_g'] > 0:
                 lines.append(f"Suggested carbs: {impact['carbs_recommended_g']}g")
+            if impact.get("stale_data"):
+                lines.append(f"\n{msg('stale_data_warning', lang, minutes=impact['data_age_minutes'])}")
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             return True
         elif editing == "whatif_bolus":
@@ -1682,6 +1691,8 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
             for p in trajectory:
                 flag = " ⚠️" if p["predicted_sg"] < 70 or p["predicted_sg"] > 250 else ""
                 lines.append(f"  {p['minutes_ahead']:>3} min: ~{p['predicted_sg']} mg/dL ({p['range_low']}-{p['range_high']}){flag}")
+            if trajectory[0].get("stale_data"):
+                lines.append(f"\n{msg('stale_data_warning', lang, minutes=trajectory[0]['data_age_minutes'])}")
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             return True
 
@@ -2130,6 +2141,8 @@ def _format_activity_plan(plan: dict, lang: str) -> str:
         risk = gi.get("risk_level", "low")
         risk_icons = {"low": "\U0001f7e2", "moderate": "\U0001f7e1", "high": "\U0001f534"}
         lines.append(f"Rischio: {risk_icons.get(risk, '?')} {risk}")
+        if gi.get("stale_data"):
+            lines.append(f"\n{msg('stale_data_warning', lang, minutes=gi.get('data_age_minutes'))}")
 
     suggestions = plan.get("suggestions", [])
     if suggestions:

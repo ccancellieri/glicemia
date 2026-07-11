@@ -490,6 +490,12 @@ async def post_estimate_bolus(request):
 
         from app.analytics.estimator import estimate_bolus
         result = estimate_bolus(session, carbs_g=carbs, patient_id=pid)
+        if result.get("stale_data"):
+            from app.i18n.messages import msg
+            result["stale_warning"] = msg(
+                "stale_data_warning", user.language or "it",
+                minutes=result["data_age_minutes"],
+            )
         return _json(result)
     finally:
         session.close()
@@ -511,6 +517,12 @@ async def post_predict_glucose(request):
 
         from app.analytics.estimator import predict_glucose
         result = predict_glucose(session, minutes, carbs, bolus, patient_id=pid)
+        if result.get("stale_data"):
+            from app.i18n.messages import msg
+            result["stale_warning"] = msg(
+                "stale_data_warning", user.language or "it",
+                minutes=result["data_age_minutes"],
+            )
         return _json(result)
     finally:
         session.close()
@@ -538,6 +550,12 @@ async def post_plan_activity(request):
         from app.analytics.estimator import estimate_activity_impact
 
         impact = estimate_activity_impact(session, activity_type, duration, intensity, patient_id=pid)
+        if impact.get("stale_data"):
+            from app.i18n.messages import msg
+            impact["stale_warning"] = msg(
+                "stale_data_warning", user.language or "it",
+                minutes=impact["data_age_minutes"],
+            )
 
         route_info = None
         if start_lat and start_lon and end_lat and end_lon:

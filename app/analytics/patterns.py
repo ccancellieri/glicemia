@@ -18,24 +18,24 @@ log = logging.getLogger(__name__)
 LOW = 70
 
 
-def compute_all_patterns(session: Session, now: datetime = None):
-    """Compute all pattern types and upsert into glucose_patterns table."""
+def compute_all_patterns(session: Session, patient_id: int = None, now: datetime = None):
+    """Compute all pattern types for one patient and upsert into glucose_patterns."""
     now = now or datetime.utcnow()
 
-    log.info("Computing glucose patterns...")
-    _compute_hourly(session, now)
-    _compute_daily(session, now)
-    _compute_monthly(session, now)
-    _compute_yearly(session, now)
+    log.info("Computing glucose patterns (patient=%s)...", patient_id)
+    _compute_hourly(session, now, patient_id)
+    _compute_daily(session, now, patient_id)
+    _compute_monthly(session, now, patient_id)
+    _compute_yearly(session, now, patient_id)
     session.commit()
     log.info("Pattern computation complete")
 
 
-def _upsert_pattern(session: Session, period_type: str, period_key: str, stats: dict):
+def _upsert_pattern(session: Session, patient_id: int, period_type: str, period_key: str, stats: dict):
     """Insert or update a pattern record."""
     existing = (
         session.query(GlucosePattern)
-        .filter_by(period_type=period_type, period_key=period_key)
+        .filter_by(patient_id=patient_id, period_type=period_type, period_key=period_key)
         .first()
     )
     if existing:
@@ -49,6 +49,7 @@ def _upsert_pattern(session: Session, period_type: str, period_key: str, stats: 
         existing.computed_at = datetime.utcnow()
     else:
         session.add(GlucosePattern(
+            patient_id=patient_id,
             period_type=period_type,
             period_key=period_key,
             **stats,
@@ -79,18 +80,20 @@ def _calc_stats(values: list[float]) -> dict:
     }
 
 
-def _compute_hourly(session: Session, now: datetime):
+def _compute_hourly(session: Session, now: datetime, patient_id: int = None):
     """Compute hourly patterns from the last 14 days."""
     start = now - timedelta(days=14)
-    readings = (
+    q = (
         session.query(GlucoseReading)
         .filter(
             GlucoseReading.timestamp >= start,
             GlucoseReading.sg.isnot(None),
             GlucoseReading.sg > 0,
         )
-        .all()
     )
+    if patient_id is not None:
+        q = q.filter(GlucoseReading.patient_id == patient_id)
+    readings = q.all()
 
     by_hour: dict[str, list[float]] = defaultdict(list)
     for r in readings:
@@ -99,23 +102,25 @@ def _compute_hourly(session: Session, now: datetime):
 
     for hour_key, values in by_hour.items():
         stats = _calc_stats(values)
-        _upsert_pattern(session, "hourly", hour_key, stats)
+        _upsert_pattern(session, patient_id, "hourly", hour_key, stats)
 
     log.debug("Hourly patterns: %d hours computed", len(by_hour))
 
 
-def _compute_daily(session: Session, now: datetime):
+def _compute_daily(session: Session, now: datetime, patient_id: int = None):
     """Compute weekday patterns from the last 8 weeks."""
     start = now - timedelta(weeks=8)
-    readings = (
+    q = (
         session.query(GlucoseReading)
         .filter(
             GlucoseReading.timestamp >= start,
             GlucoseReading.sg.isnot(None),
             GlucoseReading.sg > 0,
         )
-        .all()
     )
+    if patient_id is not None:
+        q = q.filter(GlucoseReading.patient_id == patient_id)
+    readings = q.all()
 
     by_day: dict[str, list[float]] = defaultdict(list)
     for r in readings:
@@ -124,21 +129,23 @@ def _compute_daily(session: Session, now: datetime):
 
     for day_key, values in by_day.items():
         stats = _calc_stats(values)
-        _upsert_pattern(session, "daily", day_key, stats)
+        _upsert_pattern(session, patient_id, "daily", day_key, stats)
 
     log.debug("Daily patterns: %d weekdays computed", len(by_day))
 
 
-def _compute_monthly(session: Session, now: datetime):
+def _compute_monthly(session: Session, now: datetime, patient_id: int = None):
     """Compute monthly patterns from all history."""
-    readings = (
+    q = (
         session.query(GlucoseReading)
         .filter(
             GlucoseReading.sg.isnot(None),
             GlucoseReading.sg > 0,
         )
-        .all()
     )
+    if patient_id is not None:
+        q = q.filter(GlucoseReading.patient_id == patient_id)
+    readings = q.all()
 
     by_month: dict[str, list[float]] = defaultdict(list)
     for r in readings:
@@ -147,21 +154,23 @@ def _compute_monthly(session: Session, now: datetime):
 
     for month_key, values in by_month.items():
         stats = _calc_stats(values)
-        _upsert_pattern(session, "monthly", month_key, stats)
+        _upsert_pattern(session, patient_id, "monthly", month_key, stats)
 
     log.debug("Monthly patterns: %d months computed", len(by_month))
 
 
-def _compute_yearly(session: Session, now: datetime):
+def _compute_yearly(session: Session, now: datetime, patient_id: int = None):
     """Compute yearly patterns."""
-    readings = (
+    q = (
         session.query(GlucoseReading)
         .filter(
             GlucoseReading.sg.isnot(None),
             GlucoseReading.sg > 0,
         )
-        .all()
     )
+    if patient_id is not None:
+        q = q.filter(GlucoseReading.patient_id == patient_id)
+    readings = q.all()
 
     by_year: dict[str, list[float]] = defaultdict(list)
     for r in readings:
@@ -170,6 +179,6 @@ def _compute_yearly(session: Session, now: datetime):
 
     for year_key, values in by_year.items():
         stats = _calc_stats(values)
-        _upsert_pattern(session, "yearly", year_key, stats)
+        _upsert_pattern(session, patient_id, "yearly", year_key, stats)
 
     log.debug("Yearly patterns: %d years computed", len(by_year))

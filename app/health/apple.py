@@ -47,12 +47,13 @@ WORKOUT_MAP = {
 }
 
 
-def import_apple_health_zip(zip_bytes: bytes, session: Session) -> dict:
+def import_apple_health_zip(zip_bytes: bytes, session: Session, patient_id: int = None) -> dict:
     """Import Apple Health data from an exported ZIP file.
 
     Args:
         zip_bytes: Raw bytes of the Apple Health export ZIP.
         session: SQLAlchemy session.
+        patient_id: Owner of the imported records.
 
     Returns:
         Summary dict with counts per record type.
@@ -81,9 +82,9 @@ def import_apple_health_zip(zip_bytes: bytes, session: Session) -> dict:
             for event, elem in context:
                 try:
                     if elem.tag == "Record":
-                        _process_record(elem, session, stats)
+                        _process_record(elem, session, stats, patient_id)
                     elif elem.tag == "Workout":
-                        _process_workout(elem, session, stats)
+                        _process_workout(elem, session, stats, patient_id)
                 except Exception as e:
                     stats["errors"] += 1
                     log.debug("Error processing element: %s", e)
@@ -101,7 +102,7 @@ def import_apple_health_zip(zip_bytes: bytes, session: Session) -> dict:
     return stats
 
 
-def _process_record(elem, session: Session, stats: dict):
+def _process_record(elem, session: Session, stats: dict, patient_id: int = None):
     """Process a single Apple Health Record element."""
     record_type = elem.get("type", "")
     mapping = TYPE_MAP.get(record_type)
@@ -140,7 +141,8 @@ def _process_record(elem, session: Session, stats: dict):
     # Deduplicate
     existing = (
         session.query(HealthRecord)
-        .filter_by(timestamp=start_date, record_type=our_type, source="apple_health")
+        .filter_by(patient_id=patient_id, timestamp=start_date,
+                   record_type=our_type, source="apple_health")
         .first()
     )
     if existing:
@@ -148,6 +150,7 @@ def _process_record(elem, session: Session, stats: dict):
         return
 
     session.add(HealthRecord(
+        patient_id=patient_id,
         timestamp=start_date,
         source="apple_health",
         loinc_code=loinc,
@@ -158,7 +161,7 @@ def _process_record(elem, session: Session, stats: dict):
     stats["records"] += 1
 
 
-def _process_workout(elem, session: Session, stats: dict):
+def _process_workout(elem, session: Session, stats: dict, patient_id: int = None):
     """Process a single Apple Health Workout element."""
     workout_type = elem.get("workoutActivityType", "")
     activity_type = WORKOUT_MAP.get(workout_type, "other")
@@ -197,7 +200,7 @@ def _process_workout(elem, session: Session, stats: dict):
     # Deduplicate
     existing = (
         session.query(Activity)
-        .filter_by(timestamp_start=start_date, source="apple_health")
+        .filter_by(patient_id=patient_id, timestamp_start=start_date, source="apple_health")
         .first()
     )
     if existing:
@@ -205,6 +208,7 @@ def _process_workout(elem, session: Session, stats: dict):
         return
 
     session.add(Activity(
+        patient_id=patient_id,
         timestamp_start=start_date,
         timestamp_end=end_date,
         activity_type=activity_type,

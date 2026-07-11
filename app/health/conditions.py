@@ -67,6 +67,7 @@ def add_condition(
     severity: str = "moderate",
     onset_date=None,
     notes: str = "",
+    patient_id: int = None,
 ) -> Optional[Condition]:
     """Add a condition from catalog or custom SNOMED code."""
     catalog = CONDITION_CATALOG.get(condition_key)
@@ -79,7 +80,10 @@ def add_condition(
         icd_code = ""
 
     # Check if already exists
-    existing = session.query(Condition).filter_by(snomed_code=snomed_code).first()
+    eq = session.query(Condition).filter_by(snomed_code=snomed_code)
+    if patient_id is not None:
+        eq = eq.filter(Condition.patient_id == patient_id)
+    existing = eq.first()
     if existing:
         existing.clinical_status = "active"
         existing.severity = severity
@@ -90,6 +94,7 @@ def add_condition(
         return existing
 
     condition = Condition(
+        patient_id=patient_id,
         snomed_code=snomed_code,
         icd_code=icd_code,
         display_name=display_name,
@@ -103,22 +108,29 @@ def add_condition(
     return condition
 
 
-def update_conditions_from_labs(session: Session):
+def update_conditions_from_labs(session: Session, patient_id: int = None):
     """Auto-update condition severity based on latest lab results.
 
     e.g., HbA1c changes → update T1D severity
           DEXA T-score → update osteoporosis severity
           TSH → update hypothyroidism status
     """
+    def _obs(loinc_code):
+        q = session.query(Observation).filter(Observation.loinc_code == loinc_code)
+        if patient_id is not None:
+            q = q.filter(Observation.patient_id == patient_id)
+        return q.order_by(Observation.effective_date.desc()).first()
+
+    def _cond(snomed_code):
+        q = session.query(Condition).filter_by(snomed_code=snomed_code)
+        if patient_id is not None:
+            q = q.filter(Condition.patient_id == patient_id)
+        return q.first()
+
     # HbA1c → T1D severity
-    hba1c = (
-        session.query(Observation)
-        .filter(Observation.loinc_code == "4548-4")
-        .order_by(Observation.effective_date.desc())
-        .first()
-    )
+    hba1c = _obs("4548-4")
     if hba1c and hba1c.value:
-        t1d = session.query(Condition).filter_by(snomed_code="46635009").first()
+        t1d = _cond("46635009")
         if t1d:
             if hba1c.value > 9:
                 t1d.severity = "severe"
@@ -129,14 +141,9 @@ def update_conditions_from_labs(session: Session):
             t1d.last_updated = datetime.utcnow()
 
     # DEXA T-score → osteoporosis severity
-    dexa = (
-        session.query(Observation)
-        .filter(Observation.loinc_code == "80948-3")
-        .order_by(Observation.effective_date.desc())
-        .first()
-    )
+    dexa = _obs("80948-3")
     if dexa and dexa.value:
-        osteo = session.query(Condition).filter_by(snomed_code="64859006").first()
+        osteo = _cond("64859006")
         if osteo:
             if dexa.value < -2.5:
                 osteo.severity = "severe"
@@ -149,14 +156,9 @@ def update_conditions_from_labs(session: Session):
             osteo.last_updated = datetime.utcnow()
 
     # TSH → hypothyroidism
-    tsh = (
-        session.query(Observation)
-        .filter(Observation.loinc_code == "3016-3")
-        .order_by(Observation.effective_date.desc())
-        .first()
-    )
+    tsh = _obs("3016-3")
     if tsh and tsh.value:
-        thyroid = session.query(Condition).filter_by(snomed_code="40930008").first()
+        thyroid = _cond("40930008")
         if thyroid:
             if tsh.value > 10:
                 thyroid.severity = "severe"
@@ -171,13 +173,14 @@ def update_conditions_from_labs(session: Session):
     log.info("Conditions updated from latest lab results")
 
 
-def get_active_conditions_summary(session: Session) -> str:
+def get_active_conditions_summary(session: Session, patient_id: int = None) -> str:
     """Get a text summary of active conditions for AI context."""
-    conditions = (
-        session.query(Condition)
-        .filter(Condition.clinical_status.in_(["active", "recurrence"]))
-        .all()
+    q = session.query(Condition).filter(
+        Condition.clinical_status.in_(["active", "recurrence"])
     )
+    if patient_id is not None:
+        q = q.filter(Condition.patient_id == patient_id)
+    conditions = q.all()
     if not conditions:
         return ""
 

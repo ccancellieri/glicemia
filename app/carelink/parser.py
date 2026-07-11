@@ -22,8 +22,10 @@ TREND_MAP = {
 }
 
 
-def parse_realtime(data: dict, session: Session) -> Optional[dict]:
-    """Parse CareLink realtime JSON and store in DB. Returns summary dict."""
+def parse_realtime(data: dict, session: Session, patient_id: int = None) -> Optional[dict]:
+    """Parse CareLink realtime JSON and store in DB. Returns summary dict.
+
+    All records are stored and deduplicated per patient_id."""
     if not data:
         return None
 
@@ -38,10 +40,11 @@ def parse_realtime(data: dict, session: Session) -> Optional[dict]:
 
     if sg_value and sg_ts:
         existing = session.query(GlucoseReading).filter_by(
-            timestamp=sg_ts, source="carelink"
+            patient_id=patient_id, timestamp=sg_ts, source="carelink"
         ).first()
         if not existing:
             session.add(GlucoseReading(
+                patient_id=patient_id,
                 timestamp=sg_ts, sg=sg_value, trend=trend, source="carelink"
             ))
         summary["sg"] = sg_value
@@ -54,10 +57,11 @@ def parse_realtime(data: dict, session: Session) -> Optional[dict]:
         sg_time = _parse_carelink_ts(sg_entry.get("datetime"))
         if sg_val and sg_time and sg_val > 0:
             existing = session.query(GlucoseReading).filter_by(
-                timestamp=sg_time, source="carelink"
+                patient_id=patient_id, timestamp=sg_time, source="carelink"
             ).first()
             if not existing:
                 session.add(GlucoseReading(
+                    patient_id=patient_id,
                     timestamp=sg_time, sg=sg_val, source="carelink"
                 ))
 
@@ -75,10 +79,11 @@ def parse_realtime(data: dict, session: Session) -> Optional[dict]:
 
     if sg_ts:
         existing_ps = session.query(PumpStatus).filter_by(
-            timestamp=sg_ts, source="carelink"
+            patient_id=patient_id, timestamp=sg_ts, source="carelink"
         ).first()
         if not existing_ps:
             session.add(PumpStatus(
+                patient_id=patient_id,
                 timestamp=sg_ts,
                 active_insulin=iob,
                 basal_rate=basal_rate,
@@ -103,10 +108,11 @@ def parse_realtime(data: dict, session: Session) -> Optional[dict]:
             bolus_vol = marker.get("deliveredAmount") or marker.get("programmedAmount")
             if bolus_vol:
                 existing_b = session.query(BolusEvent).filter_by(
-                    timestamp=marker_ts, source="carelink"
+                    patient_id=patient_id, timestamp=marker_ts, source="carelink"
                 ).first()
                 if not existing_b:
                     session.add(BolusEvent(
+                        patient_id=patient_id,
                         timestamp=marker_ts,
                         volume_units=bolus_vol,
                         bolus_type=marker.get("bolusType", "normal"),
@@ -124,12 +130,13 @@ def parse_realtime(data: dict, session: Session) -> Optional[dict]:
         ic_val = ratio.get("amount")
         if time_key and ic_val:
             existing_is = session.query(InsulinSetting).filter_by(
-                time_start=time_key, source="carelink"
+                patient_id=patient_id, time_start=time_key, source="carelink"
             ).first()
             if existing_is:
                 existing_is.ic_ratio = ic_val
             else:
                 session.add(InsulinSetting(
+                    patient_id=patient_id,
                     time_start=time_key,
                     time_end="",
                     ic_ratio=ic_val,
@@ -141,7 +148,7 @@ def parse_realtime(data: dict, session: Session) -> Optional[dict]:
         isf_val = sens.get("amount")
         if time_key and isf_val:
             existing_is = session.query(InsulinSetting).filter_by(
-                time_start=time_key, source="carelink"
+                patient_id=patient_id, time_start=time_key, source="carelink"
             ).first()
             if existing_is:
                 existing_is.isf = isf_val

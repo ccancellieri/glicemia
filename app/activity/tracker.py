@@ -27,6 +27,7 @@ async def plan_activity(
     lon: Optional[float] = None,
     patient_name: str = "",
     weight_kg: float = 54.0,
+    patient_id: int = None,
 ) -> dict:
     """Create a full activity plan with route, calories, weather, glucose prediction.
 
@@ -53,10 +54,13 @@ async def plan_activity(
         weather = await get_current_weather(lat, lon)
 
     # Glucose prediction
-    glucose_impact = estimate_activity_impact(session, activity_type, duration_min, intensity)
+    glucose_impact = estimate_activity_impact(
+        session, activity_type, duration_min, intensity, patient_id=patient_id
+    )
 
     # Save trip plan
     plan = TripPlan(
+        patient_id=patient_id,
         description=f"{activity_type} — {distance_km:.1f}km" if distance_km else activity_type,
         route_json=json.dumps(route_data) if route_data else None,
         distance_km=distance_km,
@@ -90,7 +94,7 @@ async def plan_activity(
     }
 
 
-async def start_activity(session: Session, plan_id: int) -> Optional[Activity]:
+async def start_activity(session: Session, plan_id: int, patient_id: int = None) -> Optional[Activity]:
     """Start tracking an activity from a plan."""
     plan = session.query(TripPlan).get(plan_id)
     if not plan:
@@ -98,10 +102,12 @@ async def start_activity(session: Session, plan_id: int) -> Optional[Activity]:
 
     plan.status = "active"
 
-    state = get_current_state(session)
+    pid = patient_id if patient_id is not None else plan.patient_id
+    state = get_current_state(session, patient_id=pid)
     start_sg = state["sg"] if state else None
 
     activity = Activity(
+        patient_id=pid,
         timestamp_start=datetime.utcnow(),
         activity_type=plan.activity_type,
         distance_km=plan.distance_km,
@@ -131,7 +137,7 @@ async def complete_activity(
         delta = (activity.timestamp_end - activity.timestamp_start).total_seconds()
         activity.duration_min = int(delta / 60)
 
-    state = get_current_state(session)
+    state = get_current_state(session, patient_id=activity.patient_id)
     if state:
         activity.end_sg = state["sg"]
         if activity.start_sg:

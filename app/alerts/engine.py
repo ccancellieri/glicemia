@@ -22,8 +22,8 @@ HIGH = 250
 FALLING_FAST_RATE = -2.5  # mg/dL per minute
 RISING_FAST_RATE = 3.0
 
-# Cooldowns (prevent repeated alerts of same type)
-_alert_cooldowns: dict[str, datetime] = {}
+# Cooldowns (prevent repeated alerts of same type), keyed per patient
+_alert_cooldowns: dict[tuple, datetime] = {}
 COOLDOWN_MINUTES = {
     "urgent_low": 15,
     "low": 30,
@@ -71,27 +71,26 @@ class Alert:
         self.timestamp = datetime.utcnow()
 
 
-def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
-    """Run all alert checks against current data. Returns list of triggered alerts."""
+def check_alerts(session: Session, patient_id: int = None, now: datetime = None) -> list[Alert]:
+    """Run all alert checks against one patient's current data.
+
+    Returns list of triggered alerts."""
     now = now or datetime.utcnow()
     alerts = []
 
     # Get latest reading
-    reading = (
-        session.query(GlucoseReading)
-        .filter(GlucoseReading.sg.isnot(None))
-        .order_by(GlucoseReading.timestamp.desc())
-        .first()
-    )
+    rq = session.query(GlucoseReading).filter(GlucoseReading.sg.isnot(None))
+    if patient_id is not None:
+        rq = rq.filter(GlucoseReading.patient_id == patient_id)
+    reading = rq.order_by(GlucoseReading.timestamp.desc()).first()
     if not reading:
         return alerts
 
     # Get latest pump status
-    pump = (
-        session.query(PumpStatus)
-        .order_by(PumpStatus.timestamp.desc())
-        .first()
-    )
+    pq = session.query(PumpStatus)
+    if patient_id is not None:
+        pq = pq.filter(PumpStatus.patient_id == patient_id)
+    pump = pq.order_by(PumpStatus.timestamp.desc()).first()
 
     sg = reading.sg
     trend = reading.trend or "FLAT"
@@ -100,7 +99,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
 
     # --- Sensor data gap ---
     if data_age > 15:
-        a = _maybe_alert("sensor_gap", now, Alert(
+        a = _maybe_alert("sensor_gap", now, patient_id, Alert(
             alert_type="sensor_gap",
             severity="warning",
             sg=sg,
@@ -112,7 +111,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
 
     # --- Urgent low (<54) ---
     if sg < URGENT_LOW:
-        a = _maybe_alert("urgent_low", now, Alert(
+        a = _maybe_alert("urgent_low", now, patient_id, Alert(
             alert_type="urgent_low",
             severity="urgent",
             sg=sg,
@@ -125,7 +124,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
     # --- Low (54-70) ---
     elif sg < LOW:
         pred_15 = sg + rate * 15
-        a = _maybe_alert("low", now, Alert(
+        a = _maybe_alert("low", now, patient_id, Alert(
             alert_type="low",
             severity="warning",
             sg=sg,
@@ -140,7 +139,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
         pred_30 = sg + rate * 30
         if pred_30 < LOW:
             minutes_to_low = (sg - LOW) / abs(rate) if rate != 0 else 999
-            a = _maybe_alert("predicted_low", now, Alert(
+            a = _maybe_alert("predicted_low", now, patient_id, Alert(
                 alert_type="predicted_low",
                 severity="warning",
                 sg=sg,
@@ -153,7 +152,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
 
     # --- High (>250) ---
     if sg > HIGH:
-        a = _maybe_alert("high", now, Alert(
+        a = _maybe_alert("high", now, patient_id, Alert(
             alert_type="high",
             severity="warning",
             sg=sg,
@@ -168,7 +167,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
         pred_30 = sg + rate * 30
         if pred_30 > HIGH:
             minutes_to_high = (HIGH - sg) / rate if rate > 0 else 999
-            a = _maybe_alert("predicted_high", now, Alert(
+            a = _maybe_alert("predicted_high", now, patient_id, Alert(
                 alert_type="predicted_high",
                 severity="info",
                 sg=sg,
@@ -182,7 +181,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
     # --- Falling fast ---
     if rate <= FALLING_FAST_RATE:
         pred_15 = sg + rate * 15
-        a = _maybe_alert("falling_fast", now, Alert(
+        a = _maybe_alert("falling_fast", now, patient_id, Alert(
             alert_type="falling_fast",
             severity="warning",
             sg=sg,
@@ -195,7 +194,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
     # --- Rising fast ---
     if rate >= RISING_FAST_RATE:
         pred_15 = sg + rate * 15
-        a = _maybe_alert("rising_fast", now, Alert(
+        a = _maybe_alert("rising_fast", now, patient_id, Alert(
             alert_type="rising_fast",
             severity="info",
             sg=sg,
@@ -207,21 +206,20 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
 
     # --- Prolonged high (>180 for 2+ hours) ---
     two_hours_ago = now - timedelta(hours=2)
-    high_readings = (
-        session.query(GlucoseReading)
-        .filter(
-            GlucoseReading.timestamp >= two_hours_ago,
-            GlucoseReading.sg > 180,
-        )
-        .count()
+    hq = session.query(GlucoseReading).filter(
+        GlucoseReading.timestamp >= two_hours_ago,
+        GlucoseReading.sg > 180,
     )
-    total_recent = (
-        session.query(GlucoseReading)
-        .filter(GlucoseReading.timestamp >= two_hours_ago)
-        .count()
+    tq = session.query(GlucoseReading).filter(
+        GlucoseReading.timestamp >= two_hours_ago
     )
+    if patient_id is not None:
+        hq = hq.filter(GlucoseReading.patient_id == patient_id)
+        tq = tq.filter(GlucoseReading.patient_id == patient_id)
+    high_readings = hq.count()
+    total_recent = tq.count()
     if total_recent > 0 and high_readings / total_recent > 0.9:
-        a = _maybe_alert("prolonged_high", now, Alert(
+        a = _maybe_alert("prolonged_high", now, patient_id, Alert(
             alert_type="prolonged_high",
             severity="warning",
             sg=sg,
@@ -233,7 +231,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
     # --- Pump alerts ---
     if pump:
         if pump.reservoir_units is not None and pump.reservoir_units < 20:
-            a = _maybe_alert("reservoir_low", now, Alert(
+            a = _maybe_alert("reservoir_low", now, patient_id, Alert(
                 alert_type="reservoir_low",
                 severity="info",
                 details={"units_remaining": pump.reservoir_units},
@@ -242,7 +240,7 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
                 alerts.append(a)
 
         if pump.battery_pct is not None and pump.battery_pct < 15:
-            a = _maybe_alert("battery_low", now, Alert(
+            a = _maybe_alert("battery_low", now, patient_id, Alert(
                 alert_type="battery_low",
                 severity="info",
                 details={"battery_pct": pump.battery_pct},
@@ -252,29 +250,31 @@ def check_alerts(session: Session, now: datetime = None) -> list[Alert]:
 
     # Enrich alerts with historical pattern context
     for alert in alerts:
-        alert.details["pattern"] = _get_pattern_context(session, now)
+        alert.details["pattern"] = _get_pattern_context(session, now, patient_id)
 
     return alerts
 
 
-def _maybe_alert(alert_type: str, now: datetime, alert: Alert) -> Optional[Alert]:
-    """Return alert only if cooldown has expired for this type."""
-    last = _alert_cooldowns.get(alert_type)
+def _maybe_alert(alert_type: str, now: datetime, patient_id, alert: Alert) -> Optional[Alert]:
+    """Return alert only if cooldown has expired for this type and patient."""
+    key = (patient_id, alert_type)
+    last = _alert_cooldowns.get(key)
     cooldown = COOLDOWN_MINUTES.get(alert_type, 30)
     if last and (now - last) < timedelta(minutes=cooldown):
         return None
-    _alert_cooldowns[alert_type] = now
+    _alert_cooldowns[key] = now
     return alert
 
 
-def _get_pattern_context(session: Session, now: datetime) -> str:
+def _get_pattern_context(session: Session, now: datetime, patient_id: int = None) -> str:
     """Get historical pattern context for enriching alerts."""
     hour_key = now.strftime("%H:00")
-    pattern = (
-        session.query(GlucosePattern)
-        .filter_by(period_type="hourly", period_key=hour_key)
-        .first()
+    q = session.query(GlucosePattern).filter_by(
+        period_type="hourly", period_key=hour_key
     )
+    if patient_id is not None:
+        q = q.filter(GlucosePattern.patient_id == patient_id)
+    pattern = q.first()
     if not pattern:
         return ""
     return (

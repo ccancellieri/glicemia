@@ -28,6 +28,7 @@ def generate_report(
     period: str = "week",
     patient_name: str = "",
     lang: str = "it",
+    patient_id: int = None,
 ) -> tuple[str, bytes | None]:
     """Generate a text report + optional chart PNG.
 
@@ -36,6 +37,7 @@ def generate_report(
         period: "today", "week", "month"
         patient_name: For report title.
         lang: Language.
+        patient_id: Scope all data to this patient.
 
     Returns:
         (text_report, chart_png_bytes or None)
@@ -50,7 +52,7 @@ def generate_report(
     start = now - delta
 
     # Compute metrics
-    metrics = compute_metrics(session, start, now)
+    metrics = compute_metrics(session, start, now, patient_id=patient_id)
     if not metrics:
         no_data = {
             "it": f"{patient_name}, non ci sono dati sufficienti per il report.",
@@ -61,13 +63,13 @@ def generate_report(
         return no_data.get(lang, no_data["it"]), None
 
     # Time slot analysis
-    slots = time_slot_analysis(session, start, now)
+    slots = time_slot_analysis(session, start, now, patient_id=patient_id)
 
     # Build text report
     text = _format_report_text(metrics, slots, patient_name, period, lang)
 
     # Generate chart
-    chart = _generate_chart(session, start, now, metrics, patient_name, period)
+    chart = _generate_chart(session, start, now, metrics, patient_name, period, patient_id)
 
     return text, chart
 
@@ -128,6 +130,7 @@ def _generate_chart(
     metrics: dict,
     name: str,
     period: str,
+    patient_id: int = None,
 ) -> bytes | None:
     """Generate a glucose chart as PNG bytes."""
     try:
@@ -139,16 +142,17 @@ def _generate_chart(
         log.warning("matplotlib not installed — skipping chart")
         return None
 
-    readings = (
+    rq = (
         session.query(GlucoseReading)
         .filter(
             GlucoseReading.timestamp >= start,
             GlucoseReading.timestamp <= end,
             GlucoseReading.sg.isnot(None),
         )
-        .order_by(GlucoseReading.timestamp.asc())
-        .all()
     )
+    if patient_id is not None:
+        rq = rq.filter(GlucoseReading.patient_id == patient_id)
+    readings = rq.order_by(GlucoseReading.timestamp.asc()).all()
 
     if len(readings) < 2:
         return None

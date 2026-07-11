@@ -128,8 +128,8 @@ def _layer_narrative_summary(session: Session, now: datetime, pid) -> str:
     # Quick prediction using simple model
     try:
         from app.analytics.estimator import predict_glucose
-        pred_30 = predict_glucose(session, minutes_ahead=30)
-        pred_60 = predict_glucose(session, minutes_ahead=60)
+        pred_30 = predict_glucose(session, minutes_ahead=30, patient_id=pid)
+        pred_60 = predict_glucose(session, minutes_ahead=60, patient_id=pid)
         if "predicted_sg" in pred_30 and "predicted_sg" in pred_60:
             lines.append(
                 f"  Prediction: ~{pred_30['predicted_sg']} in 30min, "

@@ -15,7 +15,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import UserMemory, ChatMessage
+from app.models import UserMemory, ChatMessage, UserAccount
 
 log = logging.getLogger(__name__)
 
@@ -96,13 +96,18 @@ async def extract_memories(
     conversation = f"User: {user_message}\nAssistant: {assistant_response}"
     prompt = _EXTRACTION_PROMPT.format(conversation=conversation)
 
+    # GDPR: consent gate in ai_chat() needs a UserAccount — fetch by patient_id
+    # since this background task has no request-scoped user.
+    if user is None:
+        user = session.get(UserAccount, patient_id)
+
     try:
         # Use a fast, cheap model for extraction (not the medical model)
         extraction_response = await ai_chat(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=1024,
-            user=None,  # Use server default, don't track tokens to user
+            user=user,
         )
 
         memories_data = _parse_json_response(extraction_response)
@@ -394,11 +399,15 @@ async def _ai_consolidate(session: Session, memories: list[UserMemory], mem_type
 
     prompt = _CONSOLIDATION_PROMPT.format(memories=mem_text)
 
+    # GDPR: consent gate in ai_chat() needs a UserAccount — fetch by patient_id
+    # since this background task has no request-scoped user.
+    user = session.get(UserAccount, memories[0].patient_id) if memories else None
+
     response = await ai_chat(
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
         max_tokens=2048,
-        user=None,
+        user=user,
     )
 
     consolidated_data = _parse_json_response(response)

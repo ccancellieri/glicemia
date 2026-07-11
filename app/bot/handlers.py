@@ -1982,7 +1982,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 results, summary = await analyze_lab_results(
                     image_b64=photo_b64, session=session,
                     patient_name=_name(user), lang=lang,
-                    patient_id=pid,
+                    patient_id=pid, user=user,
                 )
                 if summary:
                     from app.health.conditions import update_conditions_from_labs

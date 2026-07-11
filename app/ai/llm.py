@@ -52,6 +52,50 @@ def _is_local_model(model: str) -> bool:
     return "ollama" in model
 
 
+# GDPR: message shown when an external AI call is blocked for lack of consent
+_CONSENT_REQUIRED_MSG = {
+    "it": (
+        "🔒 Per usare l'AI esterna serve il tuo consenso GDPR.\n"
+        "Usa /privacy consent per attivarlo."
+    ),
+    "en": (
+        "🔒 External AI requires your GDPR consent.\n"
+        "Use /privacy consent to enable it."
+    ),
+    "es": (
+        "🔒 La IA externa requiere tu consentimiento GDPR.\n"
+        "Usa /privacy consent para activarlo."
+    ),
+    "fr": (
+        "🔒 L'IA externe nécessite ton consentement RGPD.\n"
+        "Utilise /privacy consent pour l'activer."
+    ),
+}
+
+
+def _consent_required_message(user) -> str:
+    """Localized message directing the user to the consent flow."""
+    lang = getattr(user, "language", None) or "it"
+    return _CONSENT_REQUIRED_MSG.get(lang, _CONSENT_REQUIRED_MSG["it"])
+
+
+def _has_ai_consent(model: str, user) -> bool:
+    """Check GDPR consent before sending data to an external AI provider.
+
+    Local models are always allowed. Calls with no user (no patient context)
+    are not gated here — the caller had no one to check consent for.
+    """
+    if _is_local_model(model) or not user:
+        return True
+    from app.privacy import has_consent
+    from app.database import get_session as _get_session
+    _s = _get_session()
+    try:
+        return has_consent(_s, user.telegram_user_id, "ai_external")
+    finally:
+        _s.close()
+
+
 def _resolve_api_key(model: str, user=None) -> Optional[str]:
     """Resolve the API key for a model: user-specific > server-wide."""
     if user:
@@ -165,6 +209,14 @@ async def chat(
         else:
             model = settings.AI_MODEL
 
+    # GDPR: block external calls (primary or fallback) without ai_external consent
+    if not _has_ai_consent(model, user):
+        log.info(
+            "External AI call blocked — no GDPR consent (user %s, model=%s)",
+            user.telegram_user_id if user else "?", model,
+        )
+        return _consent_required_message(user)
+
     # Check per-user token limits
     if user:
         from app.users import check_token_limit, is_model_allowed
@@ -199,19 +251,12 @@ async def chat(
         # Try each fallback in order
         for fallback in fallback_chain:
             # GDPR: check consent before sending data to external AI
-            if user and not _is_local_model(fallback):
-                from app.privacy import has_consent
-                from app.database import get_session as _get_session
-                _s = _get_session()
-                try:
-                    if not has_consent(_s, user.telegram_user_id, "ai_external"):
-                        log.info(
-                            "External fallback %s blocked — no GDPR consent (user %d)",
-                            fallback, user.telegram_user_id,
-                        )
-                        continue
-                finally:
-                    _s.close()
+            if not _has_ai_consent(fallback, user):
+                log.info(
+                    "External fallback %s blocked — no GDPR consent (user %s)",
+                    fallback, user.telegram_user_id if user else "?",
+                )
+                continue
 
             fallback_key = _resolve_api_key(fallback, user)
             try:

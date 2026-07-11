@@ -115,7 +115,7 @@ async def analyze_food_photo(
     # Calculate OWN bolus estimation using the estimator
     own_estimation = None
     if carbs_estimate is not None and carbs_estimate > 0:
-        own_estimation = estimate_bolus(session, carbs_g=carbs_estimate)
+        own_estimation = estimate_bolus(session, carbs_g=carbs_estimate, patient_id=patient_id)
 
         # Save meal to DB
         session.add(Meal(

@@ -19,7 +19,7 @@ class FHIRClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
 
-    async def fetch_conditions(self, session: Session) -> dict:
+    async def fetch_conditions(self, session: Session, patient_id: int = None) -> dict:
         """Fetch Condition resources and store in DB."""
         stats = {"imported": 0, "skipped": 0}
 
@@ -65,7 +65,7 @@ class FHIRClient:
                 )
 
                 existing = session.query(Condition).filter_by(
-                    snomed_code=snomed, display_name=display
+                    patient_id=patient_id, snomed_code=snomed, display_name=display
                 ).first()
 
                 if existing:
@@ -73,6 +73,7 @@ class FHIRClient:
                     stats["skipped"] += 1
                 else:
                     session.add(Condition(
+                        patient_id=patient_id,
                         snomed_code=snomed,
                         icd_code=icd,
                         display_name=display,
@@ -93,6 +94,7 @@ class FHIRClient:
         self,
         session: Session,
         category: str = "laboratory",
+        patient_id: int = None,
     ) -> dict:
         """Fetch Observation resources (lab results, vitals)."""
         stats = {"imported": 0, "skipped": 0}
@@ -146,13 +148,15 @@ class FHIRClient:
                 interpretation = interpretation_coding.get("code", "")
 
                 existing = session.query(Observation).filter_by(
-                    loinc_code=loinc, effective_date=effective_dt, source="fhir"
+                    patient_id=patient_id, loinc_code=loinc,
+                    effective_date=effective_dt, source="fhir"
                 ).first()
 
                 if existing:
                     stats["skipped"] += 1
                 else:
                     session.add(Observation(
+                        patient_id=patient_id,
                         loinc_code=loinc,
                         display_name=display,
                         value=value,

@@ -63,6 +63,7 @@ async def analyze_lab_results(
     session: Optional[Session] = None,
     patient_name: str = "",
     lang: str = "it",
+    patient_id: int = None,
 ) -> tuple[list[dict], str]:
     """Analyze lab results from photo or PDF text.
 
@@ -94,7 +95,7 @@ async def analyze_lab_results(
 
         # Store in DB
         if session:
-            _store_observation(enriched_result, session)
+            _store_observation(enriched_result, session, patient_id)
 
     if session:
         session.commit()
@@ -149,12 +150,13 @@ def _enrich_result(result: dict) -> dict:
     return result
 
 
-def _store_observation(result: dict, session: Session):
+def _store_observation(result: dict, session: Session, patient_id: int = None):
     """Store a lab result as a FHIR Observation in the DB."""
     if result.get("value") is None:
         return
 
     existing = session.query(Observation).filter_by(
+        patient_id=patient_id,
         display_name=result.get("test_name"),
         effective_date=datetime.utcnow().replace(hour=0, minute=0, second=0),
         source="lab_photo",
@@ -162,6 +164,7 @@ def _store_observation(result: dict, session: Session):
 
     if not existing:
         session.add(Observation(
+            patient_id=patient_id,
             loinc_code=result.get("loinc_code"),
             display_name=result.get("test_name", "Unknown"),
             value=result.get("value"),

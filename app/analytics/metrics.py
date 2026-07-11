@@ -26,13 +26,14 @@ def compute_metrics(
     session: Session,
     start: datetime,
     end: datetime,
+    patient_id: int = None,
 ) -> Optional[dict]:
-    """Compute glucose metrics for a date range.
+    """Compute glucose metrics for a date range, scoped to one patient.
 
     Returns dict with: mean_sg, std_sg, cv, gmi, tir, titr,
     tbr1, tbr2, tar1, tar2, readings count, days, etc.
     """
-    readings = (
+    rq = (
         session.query(GlucoseReading.sg)
         .filter(
             GlucoseReading.timestamp >= start,
@@ -40,8 +41,10 @@ def compute_metrics(
             GlucoseReading.sg.isnot(None),
             GlucoseReading.sg > 0,
         )
-        .all()
     )
+    if patient_id is not None:
+        rq = rq.filter(GlucoseReading.patient_id == patient_id)
+    readings = rq.all()
 
     values = [r.sg for r in readings]
     n = len(values)
@@ -68,21 +71,23 @@ def compute_metrics(
 
     # Days covered
     dates = set()
-    ts_readings = (
+    tsq = (
         session.query(GlucoseReading.timestamp)
         .filter(
             GlucoseReading.timestamp >= start,
             GlucoseReading.timestamp <= end,
             GlucoseReading.sg.isnot(None),
         )
-        .all()
     )
+    if patient_id is not None:
+        tsq = tsq.filter(GlucoseReading.patient_id == patient_id)
+    ts_readings = tsq.all()
     for r in ts_readings:
         dates.add(r.timestamp.date())
     days = len(dates)
 
     # Bolus stats
-    bolus_data = (
+    bq = (
         session.query(
             func.count(BolusEvent.id),
             func.sum(BolusEvent.volume_units),
@@ -91,13 +96,15 @@ def compute_metrics(
             BolusEvent.timestamp >= start,
             BolusEvent.timestamp <= end,
         )
-        .first()
     )
+    if patient_id is not None:
+        bq = bq.filter(BolusEvent.patient_id == patient_id)
+    bolus_data = bq.first()
     bolus_count = bolus_data[0] or 0
     bolus_total = bolus_data[1] or 0
 
     # Carb stats
-    carb_data = (
+    cq = (
         session.query(
             func.count(Meal.id),
             func.sum(Meal.carbs_g),
@@ -106,8 +113,10 @@ def compute_metrics(
             Meal.timestamp >= start,
             Meal.timestamp <= end,
         )
-        .first()
     )
+    if patient_id is not None:
+        cq = cq.filter(Meal.patient_id == patient_id)
+    carb_data = cq.first()
 
     return {
         "start": start.isoformat(),
@@ -138,13 +147,14 @@ def analyze_hypo_episodes(
     start: datetime,
     end: datetime,
     gap_min: int = 15,
+    patient_id: int = None,
 ) -> list[dict]:
     """Detect and analyze hypoglycemia episodes (<70 mg/dL).
 
     Groups consecutive low readings (within gap_min) into episodes.
     For each episode returns: start, duration, nadir, and preceding bolus context.
     """
-    readings = (
+    rq = (
         session.query(GlucoseReading)
         .filter(
             GlucoseReading.timestamp >= start,
@@ -152,9 +162,10 @@ def analyze_hypo_episodes(
             GlucoseReading.sg < LOW,
             GlucoseReading.sg > 0,
         )
-        .order_by(GlucoseReading.timestamp.asc())
-        .all()
     )
+    if patient_id is not None:
+        rq = rq.filter(GlucoseReading.patient_id == patient_id)
+    readings = rq.order_by(GlucoseReading.timestamp.asc()).all()
 
     if not readings:
         return []
@@ -169,13 +180,13 @@ def analyze_hypo_episodes(
             ep_values.append(r.sg)
         else:
             # Close current episode
-            episodes.append(_build_episode(session, ep_start, prev_ts, ep_values))
+            episodes.append(_build_episode(session, ep_start, prev_ts, ep_values, patient_id))
             ep_start = r.timestamp
             ep_values = [r.sg]
         prev_ts = r.timestamp
 
     # Close last episode
-    episodes.append(_build_episode(session, ep_start, prev_ts, ep_values))
+    episodes.append(_build_episode(session, ep_start, prev_ts, ep_values, patient_id))
 
     return episodes
 
@@ -185,6 +196,7 @@ def _build_episode(
     ep_start: datetime,
     ep_end: datetime,
     values: list[float],
+    patient_id: int = None,
 ) -> dict:
     """Build a hypo episode summary with preceding bolus context."""
     duration_min = max(1, int((ep_end - ep_start).total_seconds() / 60))
@@ -192,14 +204,16 @@ def _build_episode(
 
     # Look at boluses in the 3 hours before
     context_start = ep_start - timedelta(hours=3)
-    boluses = (
+    bq = (
         session.query(BolusEvent)
         .filter(
             BolusEvent.timestamp >= context_start,
             BolusEvent.timestamp <= ep_start,
         )
-        .all()
     )
+    if patient_id is not None:
+        bq = bq.filter(BolusEvent.patient_id == patient_id)
+    boluses = bq.all()
     bolus_total = sum(b.volume_units for b in boluses if b.volume_units)
     bolus_context = (
         f"{bolus_total:.1f}U in {len(boluses)} boluses (3h before)"
@@ -221,6 +235,7 @@ def time_slot_analysis(
     session: Session,
     start: datetime,
     end: datetime,
+    patient_id: int = None,
 ) -> list[dict]:
     """Analyze glucose patterns by time-of-day slots.
 
@@ -233,7 +248,7 @@ def time_slot_analysis(
         ("Evening (16-22)", time(16, 0), time(21, 59)),
     ]
 
-    readings = (
+    rq = (
         session.query(GlucoseReading)
         .filter(
             GlucoseReading.timestamp >= start,
@@ -241,8 +256,10 @@ def time_slot_analysis(
             GlucoseReading.sg.isnot(None),
             GlucoseReading.sg > 0,
         )
-        .all()
     )
+    if patient_id is not None:
+        rq = rq.filter(GlucoseReading.patient_id == patient_id)
+    readings = rq.all()
 
     if not readings:
         return []

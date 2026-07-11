@@ -23,11 +23,23 @@ apscheduler>=3.10
 # Charts
 matplotlib>=3.8
 
+# WebApp server (Telegram Mini App + API)
+aiohttp>=3.9
+
+# Async HTTP client (weather, routes, FHIR)
+httpx>=0.25
+
 # TTS (Text-to-Speech for voice replies — free, no API key)
 edge-tts>=6.1.0
 
 # Environment
 python-dotenv>=1.0
+
+# Legacy CSV analyzer (main.py) and Excel/PDF report generators
+pandas>=2.0
+numpy>=1.24
+openpyxl>=3.1
+reportlab>=4.0
 
 # Health connectors (optional)
 # fhirclient>=4.0              # uncomment when needed

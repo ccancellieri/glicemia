@@ -13,14 +13,32 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.database import init_db, get_session
 from app.config import settings
 
+# Same demo patient as seed_demo.py
+PATIENT_ID = (
+    settings.TELEGRAM_ALLOWED_USERS[0] if settings.TELEGRAM_ALLOWED_USERS else 1
+)
+
+
+def _data_range(session):
+    """Return (start, end) of the demo patient's glucose data."""
+    from sqlalchemy import func
+    from app.models import GlucoseReading
+    mn = session.query(func.min(GlucoseReading.timestamp)).filter(
+        GlucoseReading.patient_id == PATIENT_ID
+    ).scalar()
+    mx = session.query(func.max(GlucoseReading.timestamp)).filter(
+        GlucoseReading.patient_id == PATIENT_ID
+    ).scalar()
+    return mn, mx
+
 
 def test_database():
     """Test DB and data availability."""
     from app.models import GlucoseReading, BolusEvent, PatientProfile
     s = get_session()
-    glucose = s.query(GlucoseReading).count()
-    bolus = s.query(BolusEvent).count()
-    profile = s.query(PatientProfile).first()
+    glucose = s.query(GlucoseReading).filter_by(patient_id=PATIENT_ID).count()
+    bolus = s.query(BolusEvent).filter_by(patient_id=PATIENT_ID).count()
+    profile = s.query(PatientProfile).filter_by(patient_id=PATIENT_ID).first()
     s.close()
 
     assert glucose > 0, "No glucose readings — run seed_demo.py first"
@@ -31,18 +49,16 @@ def test_database():
 
 def test_metrics():
     """Test metrics computation."""
-    from datetime import datetime, timedelta
     from app.analytics.metrics import compute_metrics, time_slot_analysis
 
     s = get_session()
-    # Use March 2026 range (known data)
-    start = datetime(2026, 3, 1)
-    end = datetime(2026, 3, 19)
-    m = compute_metrics(s, start, end)
+    start, end = _data_range(s)
+    assert start and end, "No glucose data — run seed_demo.py first"
+    m = compute_metrics(s, start, end, patient_id=PATIENT_ID)
     assert m is not None, "Metrics returned None"
     assert 0 <= m["tir"] <= 100, f"TIR out of range: {m['tir']}"
 
-    slots = time_slot_analysis(s, start, end)
+    slots = time_slot_analysis(s, start, end, patient_id=PATIENT_ID)
     s.close()
 
     print(f"  Metrics: TIR={m['tir']}%, GMI={m['gmi']}%, CV={m['cv']}%, mean={m['mean_sg']}")
@@ -54,8 +70,10 @@ def test_patterns():
     """Test pattern data."""
     from app.models import GlucosePattern
     s = get_session()
-    count = s.query(GlucosePattern).count()
-    hourly = s.query(GlucosePattern).filter_by(period_type="hourly").count()
+    count = s.query(GlucosePattern).filter_by(patient_id=PATIENT_ID).count()
+    hourly = s.query(GlucosePattern).filter_by(
+        patient_id=PATIENT_ID, period_type="hourly"
+    ).count()
     s.close()
     assert count > 0, "No patterns — run seed_demo.py first"
     print(f"  Patterns: {count} total ({hourly} hourly)")
@@ -66,7 +84,7 @@ def test_context():
     """Test AI context builder."""
     from app.ai.context import build_context
     s = get_session()
-    ctx = build_context(s)
+    ctx = build_context(s, patient_id=PATIENT_ID)
     s.close()
     assert len(ctx) > 50, "Context too short"
     print(f"  Context: {len(ctx)} chars")
@@ -91,7 +109,9 @@ def test_report():
     """Test report generation."""
     from app.reports.generator import generate_report
     s = get_session()
-    text, chart = generate_report(s, period="week", patient_name="TestUser", lang="it")
+    text, chart = generate_report(
+        s, period="week", patient_name="TestUser", lang="it", patient_id=PATIENT_ID
+    )
     s.close()
     assert text and len(text) > 50
     print(f"  Report: {len(text)} chars text")
@@ -107,8 +127,8 @@ def test_estimator():
     """Test bolus estimation."""
     from app.analytics.estimator import estimate_bolus, predict_glucose
     s = get_session()
-    bolus = estimate_bolus(s, carbs_g=50)
-    pred = predict_glucose(s, minutes_ahead=60)
+    bolus = estimate_bolus(s, carbs_g=50, patient_id=PATIENT_ID)
+    pred = predict_glucose(s, minutes_ahead=60, patient_id=PATIENT_ID)
     s.close()
     print(f"  Bolus estimate for 50g carbs: {bolus}")
     print(f"  Glucose prediction 60min: {pred}")
@@ -119,7 +139,7 @@ def test_alerts():
     """Test alert engine."""
     from app.alerts.engine import check_alerts
     s = get_session()
-    alerts = check_alerts(s)
+    alerts = check_alerts(s, patient_id=PATIENT_ID)
     s.close()
     print(f"  Alerts: {len(alerts)} active")
     for a in alerts[:3]:

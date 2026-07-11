@@ -2,13 +2,20 @@
 private/
 memory/
 
-# Database (contains patient data, encrypted)
+# Database (contains patient data, encrypted) — including WAL/journal sidecars
 *.db
 *.sqlite
+*.db-shm
+*.db-wal
+*.db-journal
 
 # Environment & secrets
 .env
 logindata.json
+firebase-debug.log
+
+# Local model weights (build with models/Modelfile)
+*.gguf
 
 # Python
 venv/

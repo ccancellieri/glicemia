@@ -33,22 +33,19 @@ _CARB_KE = 0.03   # elimination rate constant (1/min)
 _CARB_SENSITIVITY = 3.5
 
 
-def get_current_state(session: Session) -> Optional[dict]:
+def get_current_state(session: Session, patient_id: int = None) -> Optional[dict]:
     """Get the current glucose/pump state from the DB."""
-    reading = (
-        session.query(GlucoseReading)
-        .filter(GlucoseReading.sg.isnot(None))
-        .order_by(GlucoseReading.timestamp.desc())
-        .first()
-    )
+    rq = session.query(GlucoseReading).filter(GlucoseReading.sg.isnot(None))
+    if patient_id is not None:
+        rq = rq.filter(GlucoseReading.patient_id == patient_id)
+    reading = rq.order_by(GlucoseReading.timestamp.desc()).first()
     if not reading:
         return None
 
-    pump = (
-        session.query(PumpStatus)
-        .order_by(PumpStatus.timestamp.desc())
-        .first()
-    )
+    pq = session.query(PumpStatus)
+    if patient_id is not None:
+        pq = pq.filter(PumpStatus.patient_id == patient_id)
+    pump = pq.order_by(PumpStatus.timestamp.desc()).first()
 
     return {
         "sg": reading.sg,
@@ -60,17 +57,15 @@ def get_current_state(session: Session) -> Optional[dict]:
     }
 
 
-def get_insulin_settings(session: Session, now: datetime = None) -> dict:
+def get_insulin_settings(session: Session, now: datetime = None, patient_id: int = None) -> dict:
     """Get the current I:C ratio and ISF for the current time of day."""
     now = now or datetime.utcnow()
     hour = now.strftime("%H:00")
 
-    setting = (
-        session.query(InsulinSetting)
-        .filter(InsulinSetting.time_start <= hour)
-        .order_by(InsulinSetting.time_start.desc())
-        .first()
-    )
+    sq = session.query(InsulinSetting).filter(InsulinSetting.time_start <= hour)
+    if patient_id is not None:
+        sq = sq.filter(InsulinSetting.patient_id == patient_id)
+    setting = sq.order_by(InsulinSetting.time_start.desc()).first()
 
     if setting:
         return {
@@ -104,13 +99,13 @@ def predict_glucose(
         Dict with predicted_sg, range_low, range_high, trend_contribution,
         iob_contribution, carb_contribution, bolus_contribution.
     """
-    state = get_current_state(session)
+    state = get_current_state(session, patient_id=patient_id)
     if not state:
         return {"error": "No current glucose data"}
 
     sg = state["sg"]
     iob = state["iob"] or 0
-    settings = get_insulin_settings(session)
+    settings = get_insulin_settings(session, patient_id=patient_id)
     isf = settings["isf"]
     ic_ratio = settings["ic_ratio"]
 
@@ -142,14 +137,14 @@ def predict_glucose(
         carb_delta = _carb_absorption(minutes_ahead, carbs_g) * _CARB_SENSITIVITY
 
     # 5. Historical pattern adjustment
-    pattern_adj = _pattern_adjustment(session, state["timestamp"], minutes_ahead)
+    pattern_adj = _pattern_adjustment(session, state["timestamp"], minutes_ahead, patient_id)
 
     # Total prediction
     predicted = sg + trend_delta + iob_delta + bolus_delta + carb_delta + pattern_adj
     predicted = max(40, predicted)  # Floor at 40
 
     # Literature-calibrated uncertainty scaled by current glycemic variability
-    cv_3h = _recent_cv(session, state["timestamp"])
+    cv_3h = _recent_cv(session, state["timestamp"], patient_id)
     uncertainty = _calibrated_uncertainty(minutes_ahead, cv_3h)
     range_low = max(40, predicted - uncertainty)
     range_high = predicted + uncertainty
@@ -188,17 +183,18 @@ def estimate_bolus(
     session: Session,
     carbs_g: float,
     target_sg: float = None,
+    patient_id: int = None,
 ) -> dict:
     """Estimate bolus dose for a meal.
 
     Provides OWN estimation using I:C, ISF, current SG, IOB.
     Shows final predicted glucose value.
     """
-    state = get_current_state(session)
+    state = get_current_state(session, patient_id=patient_id)
     if not state:
         return {"error": "No current glucose data"}
 
-    settings = get_insulin_settings(session)
+    settings = get_insulin_settings(session, patient_id=patient_id)
     ic_ratio = settings["ic_ratio"]
     isf = settings["isf"]
     target = target_sg or settings["target_sg"]
@@ -217,7 +213,8 @@ def estimate_bolus(
 
     # Predict glucose after meal + bolus (at 2 hours)
     prediction = predict_glucose(
-        session, minutes_ahead=120, carbs_g=carbs_g, bolus_u=total_bolus
+        session, minutes_ahead=120, carbs_g=carbs_g, bolus_u=total_bolus,
+        patient_id=patient_id,
     )
 
     # Also predict what happens with pump's auto-correction
@@ -251,12 +248,13 @@ def estimate_activity_impact(
     activity_type: str,
     duration_min: int,
     intensity: str = "moderate",
+    patient_id: int = None,
 ) -> dict:
     """Estimate glucose impact of a planned activity.
 
     Uses historical data for similar activities + physiological model.
     """
-    state = get_current_state(session)
+    state = get_current_state(session, patient_id=patient_id)
     if not state:
         return {"error": "No current glucose data"}
 
@@ -285,7 +283,9 @@ def estimate_activity_impact(
     total_drop += iob_amplification
 
     # Historical correction: check similar past activities
-    historical_avg = _historical_activity_delta(session, activity_type, duration_min)
+    historical_avg = _historical_activity_delta(
+        session, activity_type, duration_min, patient_id=patient_id
+    )
     if historical_avg is not None:
         # Blend model with historical (60% historical, 40% model)
         total_drop = 0.6 * abs(historical_avg) + 0.4 * total_drop
@@ -325,6 +325,7 @@ def predict_trajectory(
     carbs_g: float = 0,
     bolus_u: float = 0,
     horizons: tuple = (15, 30, 60, 90, 120),
+    patient_id: int = None,
 ) -> list[dict]:
     """Predict glucose at multiple future horizons with confidence intervals.
 
@@ -332,7 +333,10 @@ def predict_trajectory(
     """
     results = []
     for minutes in horizons:
-        pred = predict_glucose(session, minutes_ahead=minutes, carbs_g=carbs_g, bolus_u=bolus_u)
+        pred = predict_glucose(
+            session, minutes_ahead=minutes, carbs_g=carbs_g, bolus_u=bolus_u,
+            patient_id=patient_id,
+        )
         results.append(pred)
     return results
 
@@ -355,14 +359,16 @@ def _carb_absorption(minutes: float, carbs_g: float) -> float:
     return max(0.0, min(1.0, frac))
 
 
-def _recent_cv(session: Session, now: datetime) -> float:
+def _recent_cv(session: Session, now: datetime, patient_id: int = None) -> float:
     """Compute coefficient of variation (%) of glucose over last 3 hours."""
     cutoff = now - timedelta(hours=3)
-    readings = (
+    rq = (
         session.query(GlucoseReading.sg)
         .filter(GlucoseReading.timestamp >= cutoff, GlucoseReading.sg.isnot(None))
-        .all()
     )
+    if patient_id is not None:
+        rq = rq.filter(GlucoseReading.patient_id == patient_id)
+    readings = rq.all()
     if len(readings) < 3:
         return 15.0  # default moderate CV
     values = [r.sg for r in readings]
@@ -417,21 +423,24 @@ def _iob_active_fraction(start_min: int, end_min: int) -> float:
     return min(1.0, 1.0 - (1.0 - t) ** 2.5)
 
 
-def _pattern_adjustment(session: Session, now: datetime, minutes_ahead: int) -> float:
+def _pattern_adjustment(
+    session: Session, now: datetime, minutes_ahead: int, patient_id: int = None
+) -> float:
     """Adjust prediction based on historical hourly pattern."""
     future_hour = (now + timedelta(minutes=minutes_ahead)).strftime("%H:00")
     current_hour = now.strftime("%H:00")
 
-    future_pattern = (
-        session.query(GlucosePattern)
-        .filter_by(period_type="hourly", period_key=future_hour)
-        .first()
+    fq = session.query(GlucosePattern).filter_by(
+        period_type="hourly", period_key=future_hour
     )
-    current_pattern = (
-        session.query(GlucosePattern)
-        .filter_by(period_type="hourly", period_key=current_hour)
-        .first()
+    cq = session.query(GlucosePattern).filter_by(
+        period_type="hourly", period_key=current_hour
     )
+    if patient_id is not None:
+        fq = fq.filter(GlucosePattern.patient_id == patient_id)
+        cq = cq.filter(GlucosePattern.patient_id == patient_id)
+    future_pattern = fq.first()
+    current_pattern = cq.first()
 
     if future_pattern and current_pattern and current_pattern.avg_sg > 0:
         # Small nudge toward the historical pattern
@@ -445,18 +454,21 @@ def _historical_activity_delta(
     activity_type: str,
     duration_min: int,
     lookback_days: int = 90,
+    patient_id: int = None,
 ) -> Optional[float]:
     """Get average glucose delta from similar past activities."""
     cutoff = datetime.utcnow() - timedelta(days=lookback_days)
-    activities = (
+    aq = (
         session.query(Activity)
         .filter(
             Activity.activity_type == activity_type,
             Activity.timestamp_start >= cutoff,
             Activity.sg_delta.isnot(None),
         )
-        .all()
     )
+    if patient_id is not None:
+        aq = aq.filter(Activity.patient_id == patient_id)
+    activities = aq.all()
 
     if len(activities) < 3:
         return None

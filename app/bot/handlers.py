@@ -890,7 +890,8 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if activity_type:
             # Activity scenario
             impact = estimate_activity_impact(
-                session, activity_type, activity_min, intensity="moderate"
+                session, activity_type, activity_min, intensity="moderate",
+                patient_id=pid,
             )
             if "error" in impact:
                 await update.message.reply_text(msg("no_data", lang, name=_name(user)))
@@ -911,7 +912,8 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif carbs_g > 0 or bolus_u > 0:
             # Meal/bolus scenario
             trajectory = predict_trajectory(
-                session, carbs_g=carbs_g, bolus_u=bolus_u, horizons=(15, 30, 60, 90, 120)
+                session, carbs_g=carbs_g, bolus_u=bolus_u, horizons=(15, 30, 60, 90, 120),
+                patient_id=pid,
             )
             if not trajectory or "error" in trajectory[0]:
                 await update.message.reply_text(msg("no_data", lang, name=_name(user)))
@@ -945,7 +947,7 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Add bolus suggestion if only carbs given
             if carbs_g > 0 and bolus_u == 0:
                 from app.analytics.estimator import estimate_bolus
-                suggestion = estimate_bolus(session, carbs_g)
+                suggestion = estimate_bolus(session, carbs_g, patient_id=pid)
                 if "total_suggested_bolus" in suggestion:
                     lines.append(
                         f"\nSuggested bolus: {suggestion['total_suggested_bolus']}U "
@@ -956,7 +958,7 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             # Unstructured — send to AI for interpretation
             from app.analytics.estimator import get_current_state
-            state = get_current_state(session)
+            state = get_current_state(session, patient_id=pid)
             state_desc = (
                 f"SG={state['sg']}, trend={state['trend']}, IOB={state['iob']}"
                 if state else "No CGM data"
@@ -968,9 +970,10 @@ async def cmd_whatif(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             ctx = build_context(session, patient_id=pid, now=datetime.utcnow(), query=raw)
             system = build_system_prompt(_name(user), lang, ctx)
-            response = await ai_chat(
-                user_message=prompt, system_prompt=system, patient_id=pid
-            )
+            response = await ai_chat([
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ], user=user)
             await update.message.reply_text(response)
     finally:
         session.close()
@@ -1624,7 +1627,7 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
                 return True
             from app.analytics.estimator import predict_trajectory, estimate_bolus as est_bolus
             pid = _pid(user)
-            trajectory = predict_trajectory(session, carbs_g=carbs)
+            trajectory = predict_trajectory(session, carbs_g=carbs, patient_id=pid)
             if not trajectory or "error" in trajectory[0]:
                 await update.message.reply_text(msg("no_data", lang, name=_name(user)))
                 return True
@@ -1632,7 +1635,7 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
             for p in trajectory:
                 flag = " ⚠️" if p["predicted_sg"] < 70 or p["predicted_sg"] > 250 else ""
                 lines.append(f"  {p['minutes_ahead']:>3} min: ~{p['predicted_sg']} mg/dL ({p['range_low']}-{p['range_high']}){flag}")
-            suggestion = est_bolus(session, carbs)
+            suggestion = est_bolus(session, carbs, patient_id=pid)
             if "total_suggested_bolus" in suggestion:
                 lines.append(f"\nSuggested bolus: {suggestion['total_suggested_bolus']}U (I:C 1:{suggestion['ic_ratio']:.0f})")
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -1645,7 +1648,10 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
                 await update.message.reply_text(msg("whatif_enter_activity", lang))
                 return True
             from app.analytics.estimator import estimate_activity_impact
-            impact = estimate_activity_impact(session, match.group(1).lower(), int(match.group(2)))
+            impact = estimate_activity_impact(
+                session, match.group(1).lower(), int(match.group(2)),
+                patient_id=_pid(user),
+            )
             if "error" in impact:
                 await update.message.reply_text(msg("no_data", lang, name=_name(user)))
                 return True
@@ -1667,7 +1673,7 @@ async def _handle_settings_edit(update: Update, context: ContextTypes.DEFAULT_TY
                 await update.message.reply_text(msg("sg_invalid", lang))
                 return True
             from app.analytics.estimator import predict_trajectory
-            trajectory = predict_trajectory(session, bolus_u=bolus)
+            trajectory = predict_trajectory(session, bolus_u=bolus, patient_id=_pid(user))
             if not trajectory or "error" in trajectory[0]:
                 await update.message.reply_text(msg("no_data", lang, name=_name(user)))
                 return True

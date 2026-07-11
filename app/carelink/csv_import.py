@@ -17,12 +17,13 @@ from app.models import GlucoseReading, BolusEvent, InsulinSetting
 log = logging.getLogger(__name__)
 
 
-def import_carelink_csv(file_path: str, session: Session) -> dict:
+def import_carelink_csv(file_path: str, session: Session, patient_id: int = None) -> dict:
     """Import a CareLink CSV export into the database.
 
     Args:
         file_path: Path to the CSV file.
         session: SQLAlchemy session.
+        patient_id: Owner of the imported records.
 
     Returns:
         Summary dict with counts of imported records.
@@ -78,10 +79,11 @@ def import_carelink_csv(file_path: str, session: Session) -> dict:
 
             if sg is not None and sg > 0:
                 existing = session.query(GlucoseReading).filter_by(
-                    timestamp=ts, source="carelink_csv"
+                    patient_id=patient_id, timestamp=ts, source="carelink_csv"
                 ).first()
                 if not existing:
                     session.add(GlucoseReading(
+                        patient_id=patient_id,
                         timestamp=ts, sg=sg, bg=bg, source="carelink_csv"
                     ))
                     stats["glucose"] += 1
@@ -90,7 +92,7 @@ def import_carelink_csv(file_path: str, session: Session) -> dict:
             bolus_vol = _safe_float(cells, col_idx.get("Bolus Volume Delivered (U)"))
             if bolus_vol is not None and bolus_vol > 0:
                 existing = session.query(BolusEvent).filter_by(
-                    timestamp=ts, source="carelink_csv"
+                    patient_id=patient_id, timestamp=ts, source="carelink_csv"
                 ).first()
                 if not existing:
                     carb_input = _safe_float(cells, col_idx.get("BWZ Carb Input (grams)"))
@@ -100,6 +102,7 @@ def import_carelink_csv(file_path: str, session: Session) -> dict:
                     ic = _safe_float(cells, col_idx.get("BWZ Carb Ratio (g/U)"))
 
                     session.add(BolusEvent(
+                        patient_id=patient_id,
                         timestamp=ts,
                         volume_units=bolus_vol,
                         bolus_source=bolus_src or "",
@@ -113,7 +116,7 @@ def import_carelink_csv(file_path: str, session: Session) -> dict:
                     if isf or ic:
                         hour = ts.strftime("%H:00")
                         existing_is = session.query(InsulinSetting).filter_by(
-                            time_start=hour, source="carelink_csv"
+                            patient_id=patient_id, time_start=hour, source="carelink_csv"
                         ).first()
                         if existing_is:
                             if isf:
@@ -122,6 +125,7 @@ def import_carelink_csv(file_path: str, session: Session) -> dict:
                                 existing_is.ic_ratio = ic
                         elif isf or ic:
                             session.add(InsulinSetting(
+                                patient_id=patient_id,
                                 time_start=hour,
                                 time_end="",
                                 ic_ratio=ic,
@@ -141,7 +145,9 @@ def import_carelink_csv(file_path: str, session: Session) -> dict:
     return stats
 
 
-def import_carelink_csv_bytes(data: bytes, filename: str, session: Session) -> dict:
+def import_carelink_csv_bytes(
+    data: bytes, filename: str, session: Session, patient_id: int = None
+) -> dict:
     """Import CareLink CSV from raw bytes (e.g., Telegram file upload)."""
     import tempfile
 
@@ -150,7 +156,7 @@ def import_carelink_csv_bytes(data: bytes, filename: str, session: Session) -> d
         tmp_path = tmp.name
 
     try:
-        return import_carelink_csv(tmp_path, session)
+        return import_carelink_csv(tmp_path, session, patient_id=patient_id)
     finally:
         os.unlink(tmp_path)
 

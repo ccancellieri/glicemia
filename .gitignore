@@ -1,6 +1,7 @@
 # Patient data (NEVER commit)
 private/
 memory/
+diabetica_ai_study.pdf
 
 # Database (contains patient data, encrypted) — including WAL/journal sidecars
 *.db

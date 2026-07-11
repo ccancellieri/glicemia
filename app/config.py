@@ -51,6 +51,7 @@ class Settings:
     # WebApp
     WEBAPP_PORT: int = int(os.getenv("WEBAPP_PORT", "8443"))
     WEBAPP_URL: str = os.getenv("WEBAPP_URL", "")
+    WEBAPP_BIND_HOST: str = os.getenv("WEBAPP_BIND_HOST", "127.0.0.1")
 
     # TTS (Text-to-Speech for voice replies)
     TTS_MODEL: str = os.getenv("TTS_MODEL", "")

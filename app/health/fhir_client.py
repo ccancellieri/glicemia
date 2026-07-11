@@ -178,9 +178,12 @@ class FHIRClient:
 
         return stats
 
-    def export_observations_bundle(self, session: Session) -> dict:
+    def export_observations_bundle(self, session: Session, patient_id: int = None) -> dict:
         """Export local observations as a FHIR Bundle for sharing."""
-        observations = session.query(Observation).all()
+        oq = session.query(Observation)
+        if patient_id is not None:
+            oq = oq.filter(Observation.patient_id == patient_id)
+        observations = oq.all()
 
         entries = []
         for obs in observations:

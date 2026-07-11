@@ -82,6 +82,12 @@ async def _start_carelink_poller():
     from app.carelink.parser import parse_realtime
     from app.users import get_all_active_users
 
+    def _connect_and_fetch(client: "CareLinkClient"):
+        """Blocking network I/O — run off the event loop via asyncio.to_thread."""
+        if not client.connect():
+            return None
+        return client.fetch()
+
     async def poll_loop():
         while True:
             session = get_session()
@@ -96,11 +102,21 @@ async def _start_carelink_poller():
                             password=user.carelink_password,
                             country=user.carelink_country or "it",
                         )
-                        if not client.connect():
-                            continue
-                        data = client.fetch()
+                        # Network I/O runs in a worker thread with a hard
+                        # timeout so one slow patient can't stall the loop
+                        # (Telegram polling, webapp, alert checks for others).
+                        data = await asyncio.wait_for(
+                            asyncio.to_thread(_connect_and_fetch, client),
+                            timeout=50,
+                        )
+                        # DB write stays on the event-loop side using the
+                        # loop-owned session (SQLite sessions aren't
+                        # thread-safe).
                         if data:
                             parse_realtime(data, session, patient_id=user.telegram_user_id)
+                    except asyncio.TimeoutError:
+                        log.error("CareLink poll timed out for user %d",
+                                  user.telegram_user_id)
                     except Exception as e:
                         log.error("CareLink poll error for user %d: %s",
                                   user.telegram_user_id, e)

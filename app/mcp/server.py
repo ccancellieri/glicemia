@@ -3,14 +3,39 @@
 Allows deep analysis via Claude Desktop with Pro subscription.
 Provides tools: get_status, get_history, get_patterns, get_metrics,
 get_conditions, search_glucose, estimate_bolus.
+
+Each server instance is bound to exactly one patient (see
+`_resolve_patient_id`) — in a multi-patient database an unscoped server
+would mix patients' data into dose calculations, so it refuses to start
+unless the bound patient is unambiguous.
 """
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
 log = logging.getLogger(__name__)
+
+
+def _resolve_patient_id(session) -> int:
+    """Resolve the single patient this MCP server instance is scoped to.
+
+    Priority: MCP_PATIENT_ID env var; else the sole active UserAccount if
+    there's exactly one; otherwise refuse to start.
+    """
+    env_pid = os.getenv("MCP_PATIENT_ID")
+    if env_pid:
+        return int(env_pid)
+
+    from app.users import get_all_active_users
+
+    users = get_all_active_users(session)
+    if len(users) == 1:
+        return users[0].telegram_user_id
+
+    raise RuntimeError("MCP server requires MCP_PATIENT_ID when multiple patients exist")
 
 
 def create_mcp_server():
@@ -21,6 +46,14 @@ def create_mcp_server():
     except ImportError:
         log.warning("mcp package not installed — MCP server disabled")
         return None
+
+    from app.database import get_session
+
+    session = get_session()
+    try:
+        patient_id = _resolve_patient_id(session)
+    finally:
+        session.close()
 
     server = Server("glicemia")
 
@@ -147,7 +180,7 @@ def create_mcp_server():
         session = get_session()
         try:
             result = _handle_tool(
-                name, arguments, session,
+                name, arguments, session, patient_id,
                 GlucoseReading, PumpStatus, GlucosePattern,
                 Condition, Observation, Activity, InsulinSetting,
                 compute_metrics, analyze_hypo_episodes,
@@ -161,17 +194,17 @@ def create_mcp_server():
 
 
 def _handle_tool(
-    name, arguments, session,
+    name, arguments, session, patient_id,
     GlucoseReading, PumpStatus, GlucosePattern,
     Condition, Observation, Activity, InsulinSetting,
     compute_metrics, analyze_hypo_episodes,
     est_bolus, pred_glucose, get_current_state,
 ):
-    """Dispatch tool calls to the appropriate handler."""
+    """Dispatch tool calls to the appropriate handler, scoped to patient_id."""
     now = datetime.utcnow()
 
     if name == "get_status":
-        state = get_current_state(session)
+        state = get_current_state(session, patient_id=patient_id)
         return state or {"error": "No data available"}
 
     elif name == "get_history":
@@ -179,6 +212,7 @@ def _handle_tool(
         readings = (
             session.query(GlucoseReading)
             .filter(GlucoseReading.timestamp >= now - timedelta(hours=hours))
+            .filter(GlucoseReading.patient_id == patient_id)
             .order_by(GlucoseReading.timestamp.asc())
             .all()
         )
@@ -191,7 +225,7 @@ def _handle_tool(
         period_type = arguments.get("period_type", "hourly")
         patterns = (
             session.query(GlucosePattern)
-            .filter_by(period_type=period_type)
+            .filter_by(period_type=period_type, patient_id=patient_id)
             .all()
         )
         return [
@@ -206,11 +240,12 @@ def _handle_tool(
 
     elif name == "get_metrics":
         days = arguments.get("days", 14)
-        return compute_metrics(session, now - timedelta(days=days), now)
+        return compute_metrics(session, now - timedelta(days=days), now, patient_id=patient_id)
 
     elif name == "get_conditions":
         conditions = session.query(Condition).filter(
-            Condition.clinical_status.in_(["active", "recurrence"])
+            Condition.patient_id == patient_id,
+            Condition.clinical_status.in_(["active", "recurrence"]),
         ).all()
         return [
             {
@@ -225,6 +260,7 @@ def _handle_tool(
         limit = arguments.get("limit", 20)
         obs = (
             session.query(Observation)
+            .filter(Observation.patient_id == patient_id)
             .order_by(Observation.effective_date.desc())
             .limit(limit)
             .all()
@@ -244,6 +280,7 @@ def _handle_tool(
         activities = (
             session.query(Activity)
             .filter(Activity.timestamp_start >= now - timedelta(days=days))
+            .filter(Activity.patient_id == patient_id)
             .order_by(Activity.timestamp_start.desc())
             .all()
         )
@@ -258,7 +295,7 @@ def _handle_tool(
         ]
 
     elif name == "estimate_bolus":
-        return est_bolus(session, carbs_g=arguments["carbs_g"])
+        return est_bolus(session, carbs_g=arguments["carbs_g"], patient_id=patient_id)
 
     elif name == "predict_glucose":
         return pred_glucose(
@@ -266,14 +303,20 @@ def _handle_tool(
             minutes_ahead=arguments.get("minutes_ahead", 60),
             carbs_g=arguments.get("carbs_g", 0),
             bolus_u=arguments.get("bolus_u", 0),
+            patient_id=patient_id,
         )
 
     elif name == "get_hypo_episodes":
         days = arguments.get("days", 14)
-        return analyze_hypo_episodes(session, now - timedelta(days=days), now)
+        return analyze_hypo_episodes(session, now - timedelta(days=days), now, patient_id=patient_id)
 
     elif name == "get_insulin_settings":
-        settings = session.query(InsulinSetting).order_by(InsulinSetting.time_start).all()
+        settings = (
+            session.query(InsulinSetting)
+            .filter_by(patient_id=patient_id)
+            .order_by(InsulinSetting.time_start)
+            .all()
+        )
         return [
             {
                 "time_start": s.time_start, "ic_ratio": s.ic_ratio,
@@ -283,3 +326,33 @@ def _handle_tool(
         ]
 
     return {"error": f"Unknown tool: {name}"}
+
+
+def main():
+    """Run the MCP server over stdio — entry point for `python -m app.mcp.server`.
+
+    This is what Claude Desktop launches as a subprocess for the MCP
+    integration. Requires the optional `mcp` package (see requirements.txt).
+    """
+    server = create_mcp_server()
+    if server is None:
+        raise SystemExit(
+            "mcp package not installed — install it to run the stdio server "
+            "(see requirements.txt)"
+        )
+
+    import asyncio
+
+    async def _run():
+        from mcp.server.stdio import stdio_server
+
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
+
+    asyncio.run(_run())
+
+
+if __name__ == "__main__":
+    main()

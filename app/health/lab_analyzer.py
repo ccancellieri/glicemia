@@ -64,6 +64,7 @@ async def analyze_lab_results(
     patient_name: str = "",
     lang: str = "it",
     patient_id: int = None,
+    user=None,
 ) -> tuple[list[dict], str]:
     """Analyze lab results from photo or PDF text.
 
@@ -73,12 +74,12 @@ async def analyze_lab_results(
     # Extract results using AI
     if image_b64:
         messages = [{"role": "user", "content": LAB_EXTRACTION_PROMPT}]
-        raw_response = await chat_with_vision(messages, image_base64=image_b64)
+        raw_response = await chat_with_vision(messages, image_base64=image_b64, user=user)
     elif pdf_text:
         messages = [
             {"role": "user", "content": LAB_EXTRACTION_PROMPT + f"\n\nDocument text:\n{pdf_text}"}
         ]
-        raw_response = await ai_chat(messages)
+        raw_response = await ai_chat(messages, user=user)
     else:
         return [], "No lab data provided"
 

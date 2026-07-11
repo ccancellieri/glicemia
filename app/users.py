@@ -40,7 +40,8 @@ def create_user(
     )
     session.add(user)
     session.commit()
-    log.info("Created user %s (tg_id=%d, admin=%s)", patient_name, telegram_user_id, is_admin)
+    log.info("Created user (tg_id=%d, admin=%s)", telegram_user_id, is_admin)
+    log.debug("Created user %s (tg_id=%d, admin=%s)", patient_name, telegram_user_id, is_admin)
     return user
 
 

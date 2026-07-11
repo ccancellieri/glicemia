@@ -154,8 +154,9 @@ def parse_realtime(data: dict, session: Session, patient_id: int = None) -> Opti
                 existing_is.isf = isf_val
 
     session.commit()
-    log.info("CareLink data parsed: SG=%s trend=%s IOB=%s",
-             summary.get("sg"), summary.get("trend"), summary.get("iob"))
+    log.info("CareLink data parsed (patient=%s)", patient_id)
+    log.debug("CareLink data parsed: SG=%s trend=%s IOB=%s",
+              summary.get("sg"), summary.get("trend"), summary.get("iob"))
     return summary
 
 

@@ -1,6 +1,6 @@
 # GliceMia — Deploy on Oracle Cloud (Always Free)
 
-Deploy GliceMia on Oracle Cloud's Always Free tier: 4 ARM cores, 24 GB RAM, 200 GB storage, **free forever**, with an EU data center (Milan) for GDPR compliance.
+Deploy GliceMia on Oracle Cloud's Always Free tier: 2 ARM cores, 12 GB RAM, 200 GB storage (the Always Free maximum since June 2026), **free forever**, with an EU data center (Milan) for GDPR compliance. After creating the VM, upgrade the tenancy to Pay As You Go — still 0 EUR within Always Free limits — or Oracle will eventually reclaim the instance as idle (see step 2 of each guide).
 
 ---
 
@@ -23,12 +23,14 @@ Deploy GliceMia on Oracle Cloud's Always Free tier: 4 ARM cores, 24 GB RAM, 200 
    - **Name**: `glicemia`
    - **Image**: Ubuntu 22.04 (o 24.04)
    - **Shape**: clicca **"Change Shape"** → **Ampere** → **VM.Standard.A1.Flex**
-     - OCPUs: **2** (puoi usare fino a 4 gratis)
-     - RAM: **12 GB** (puoi usare fino a 24 GB gratis)
+     - OCPUs: **2** (il massimo Always Free da giugno 2026)
+     - RAM: **12 GB** (il massimo Always Free da giugno 2026)
    - **Networking**: lascia i default (crea una nuova VCN)
    - **SSH key**: clicca **"Generate a key pair"** e **scarica entrambe le chiavi** (pubblica e privata)
      - Oppure carica la tua chiave pubblica se ne hai già una (`~/.ssh/id_rsa.pub`)
 3. Clicca **"Create"** — aspetta 2-3 minuti
+
+> **Evita la revoca per inattività (importante)**: Oracle revoca le istanze Always Free considerate inattive (95° percentile di CPU sotto il 20% su una finestra di 7 giorni) — un bot leggero come GliceMia risulta inattivo per definizione. Dopo aver creato la VM, aggiorna l'account a **Pay As You Go** (Account Management → Upgrade): l'uso entro i limiti Always Free resta a 0 €, ma gli account PAYG sono esenti dalla revoca per inattività. Una singola istanza 2 OCPU / 12 GB accesa 24/7 rientra nel budget mensile gratuito (1.500 OCPU-ore + 9.000 GB-ore).
 
 ### 3. Configura il firewall Oracle (Security List)
 
@@ -81,7 +83,7 @@ sudo ufw enable
 ```bash
 # Clona il repository
 cd ~
-git clone https://github.com/TUO_USER/diabete.git glicemia
+git clone https://github.com/TUO_USER/glicemia.git glicemia
 cd glicemia
 
 # Crea virtual environment
@@ -263,11 +265,13 @@ sudo systemctl restart glicemia
    - **Name**: `glicemia`
    - **Image**: Ubuntu 22.04 (or 24.04)
    - **Shape**: click **"Change Shape"** → **Ampere** → **VM.Standard.A1.Flex**
-     - OCPUs: **2** (up to 4 free)
-     - RAM: **12 GB** (up to 24 GB free)
+     - OCPUs: **2** (the Always Free maximum since June 2026)
+     - RAM: **12 GB** (the Always Free maximum since June 2026)
    - **Networking**: leave defaults (creates a new VCN)
    - **SSH key**: click **"Generate a key pair"** and **download both keys**
 3. Click **"Create"** — wait 2-3 minutes
+
+> **Avoid idle reclamation (important)**: Oracle reclaims Always Free instances it deems idle (95th-percentile CPU below 20% over any 7-day window) — a lightweight bot like GliceMia is idle by that definition. After creating the VM, upgrade the tenancy to **Pay As You Go** (Account Management → Upgrade): usage within Always Free limits still costs 0 EUR, but PAYG tenancies are exempt from idle reclamation. A single 2 OCPU / 12 GB instance running 24/7 fits the free monthly budget (1,500 OCPU-hours + 9,000 GB-hours).
 
 ### 3. Configure Oracle firewall (Security List)
 
@@ -303,7 +307,7 @@ sudo ufw enable
 
 ```bash
 cd ~
-git clone https://github.com/YOUR_USER/diabete.git glicemia
+git clone https://github.com/YOUR_USER/glicemia.git glicemia
 cd glicemia
 python3 -m venv venv
 source venv/bin/activate
@@ -399,6 +403,8 @@ sudo systemctl restart glicemia
    - **SSH key**: genera y descarga el par de claves
 3. Clic en **"Create"**
 
+> **Evita la recuperación por inactividad (importante)**: Oracle recupera las instancias Always Free inactivas (percentil 95 de CPU por debajo del 20% durante 7 días) — un bot ligero como GliceMia cuenta como inactivo. Tras crear la VM, actualiza la cuenta a **Pay As You Go** (Account Management → Upgrade): el uso dentro de los límites Always Free sigue costando 0 €, pero las cuentas PAYG están exentas de la recuperación por inactividad.
+
 ### 3. Configura el firewall (Security List)
 
 1. **Networking → VCN** → Subnet → Security List
@@ -422,7 +428,7 @@ sudo ufw allow 22/tcp && sudo ufw allow 443/tcp && sudo ufw allow 8443/tcp && su
 ### 6. Clona y configura
 
 ```bash
-cd ~ && git clone https://github.com/TU_USUARIO/diabete.git glicemia
+cd ~ && git clone https://github.com/TU_USUARIO/glicemia.git glicemia
 cd glicemia && python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt && pip install aiohttp
 cp .env.example .env && nano .env
@@ -469,6 +475,8 @@ sudo systemctl restart glicemia
    - **Cle SSH**: generez et telechargez la paire de cles
 3. Cliquez **"Create"**
 
+> **Évitez la récupération pour inactivité (important)** : Oracle récupère les instances Always Free jugées inactives (95e percentile de CPU sous 20 % sur une fenêtre de 7 jours) — un bot léger comme GliceMia est inactif par définition. Après avoir créé la VM, passez le compte en **Pay As You Go** (Account Management → Upgrade) : l'utilisation dans les limites Always Free reste à 0 €, mais les comptes PAYG sont exemptés de la récupération pour inactivité.
+
 ### 3. Configurez le firewall (Security List)
 
 1. **Networking → VCN** → Subnet → Security List
@@ -492,7 +500,7 @@ sudo ufw allow 22/tcp && sudo ufw allow 443/tcp && sudo ufw allow 8443/tcp && su
 ### 6. Clonez et configurez
 
 ```bash
-cd ~ && git clone https://github.com/VOTRE_USER/diabete.git glicemia
+cd ~ && git clone https://github.com/VOTRE_USER/glicemia.git glicemia
 cd glicemia && python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt && pip install aiohttp
 cp .env.example .env && nano .env
@@ -554,6 +562,7 @@ GitHub Pages    Oracle Cloud VM (Milan)
 - [x] systemd hardening — `NoNewPrivileges`, `ProtectSystem`, `PrivateTmp`
 - [x] Oracle Cloud Milan region — data stays in Italy (GDPR)
 - [x] Daily encrypted database backups
+- [x] Uptime monitor — GitHub Actions pings `/health` every 2 hours and opens an issue on failure (set the `HEALTHCHECK_URL` repository variable to `https://<your-domain>/health`)
 - [x] No patient data on GitHub (Pages hosts only the UI shell)
 
 ## Cost Summary

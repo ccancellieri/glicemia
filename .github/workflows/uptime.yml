@@ -1,0 +1,70 @@
+# Uptime monitor — pings the deployment's /health endpoint on a schedule and
+# opens an issue when it stops responding, so a dead deployment is noticed in
+# hours instead of months.
+#
+# Setup: set the HEALTHCHECK_URL repository variable (Settings -> Secrets and
+# variables -> Actions -> Variables) to the public health endpoint, e.g.
+# https://your-domain.example/health. Until the variable is set, runs are no-ops.
+name: Uptime check
+
+on:
+  schedule:
+    - cron: '17 */2 * * *'  # every 2 hours (offset to avoid top-of-hour congestion)
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  ping:
+    name: Ping health endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check health endpoint
+        id: check
+        env:
+          URL: ${{ vars.HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "HEALTHCHECK_URL variable not set — nothing to check."
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 20 "$URL" > /dev/null; then
+              echo "Deployment is up (attempt $attempt)."
+              echo "status=up" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $attempt failed."
+            sleep 30
+          done
+          echo "status=down" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue if down
+        if: steps.check.outputs.status == 'down'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "Deployment down in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing already open — not filing a duplicate."
+          else
+            {
+              echo "The scheduled uptime check failed 3 consecutive attempts against the configured health endpoint."
+              echo ""
+              echo "- Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              echo '- First diagnosis steps: `sudo systemctl status glicemia` and `sudo journalctl -u glicemia -n 100` on the host; if the host itself is unreachable, check the cloud console (Always Free instances can be reclaimed when idle — see DEPLOY.md).'
+              echo ""
+              echo "This issue was opened automatically by the uptime workflow; it will not file duplicates while one remains open. Close it once the deployment is healthy again."
+            } > /tmp/uptime-issue-body.md
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Deployment down: health check failing" \
+              --body-file /tmp/uptime-issue-body.md
+          fi
+
+      - name: Fail run so the outage is visible
+        if: steps.check.outputs.status == 'down'
+        run: exit 1

@@ -22,6 +22,11 @@ async def serve_webapp(request):
     return web.FileResponse(html_path)
 
 
+async def health(request):
+    """Liveness probe for uptime monitoring — unauthenticated, returns no data."""
+    return web.json_response({"status": "ok"})
+
+
 async def create_webapp_server():
     """Create and start the aiohttp web server.
 
@@ -51,6 +56,7 @@ async def create_webapp_server():
     # Routes
     app.router.add_get("/webapp", serve_webapp)
     app.router.add_get("/webapp/", serve_webapp)
+    app.router.add_get("/health", health)
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response())
     setup_routes(app)
 
